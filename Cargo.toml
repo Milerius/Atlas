@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/atlas-core", "crates/atlas-verify"]
+members = ["crates/atlas-core", "crates/atlas-scenarios", "crates/atlas-verify"]
 resolver = "2"
 
 [workspace.package]
@@ -10,6 +10,7 @@ repository = "https://github.com/milerius/Atlas"
 [workspace.dependencies]
 async-trait = "0.1"
 bolero = "0.13"
+cucumber = "0.22"
 num-bigint = { version = "0.4", features = ["serde"] }
 num-traits = "0.2"
 rust_decimal = { version = "1", features = ["serde"] }
