@@ -18,6 +18,8 @@
 //!   covers MPC, local keys, Privy, account abstraction, and future signers.
 //!   The response can be a raw signature, a signed transaction, or a
 //!   submitted transaction result.
+//! - **Per-chain fee shapes** ([`fee`]) — `Fee` envelope, `EvmFee` variants,
+//!   and `TransactionStatus` for `ChainReader` returns.
 //! - **Per-chain-family execution** ([`service`]) — `ChainService` trait with
 //!   a `MockEvmService` smoke implementation. Chain services accept only
 //!   concrete `AssetInstance`s; `AssetGroup` and `AssetInstrument` are for
@@ -35,6 +37,7 @@ pub mod amount;
 pub mod asset;
 pub mod chain;
 pub mod error;
+pub mod fee;
 pub mod id;
 pub mod official;
 pub mod registry;
@@ -44,3 +47,4 @@ pub mod transaction;
 
 pub use amount::{AmountError, RawAmount};
 pub use error::{AssetError, ChainError, RegistryError, RpcError, SigningError};
+pub use fee::{EvmFee, Fee, TransactionStatus};
