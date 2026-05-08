@@ -37,7 +37,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
       # See ci.yml: --branch SIGSEGVs llvm-cov on async-trait crates.
-      - run: cargo +nightly llvm-cov --workspace --all-features --html
+      # atlas-scenarios excluded: BDD harness, not API surface.
+      - run: cargo +nightly llvm-cov --workspace --all-features --ignore-filename-regex 'atlas-scenarios' --html
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
         with:
