@@ -1,3 +1,16 @@
+//! Per-chain-family transaction lifecycle.
+//!
+//! [`ChainService`] is the boundary between atlas-core's typed
+//! intent-and-instance world and chain-specific encoding / RPC. One
+//! `impl` per chain family: a real EVM service handles RLP / EIP-1559
+//! / gas estimation, a future Solana service handles message
+//! encoding / recent blockhash, and so on.
+//!
+//! [`MockEvmService`] is in-tree as a smoke implementation. It
+//! returns deterministic placeholder bytes and a `0xmock` tx hash;
+//! see `crates/atlas-core/tests/smoke_flow.rs` for the end-to-end
+//! flow it exercises.
+
 use crate::{
     chain::Curve,
     error::ChainError,
@@ -7,8 +20,18 @@ use crate::{
 };
 use async_trait::async_trait;
 
+/// Per-chain-family transaction lifecycle: prepare → signing-request
+/// → assemble → broadcast.
+///
+/// Implementations must be `Send + Sync` so they can be shared across
+/// async tasks. They accept only concrete
+/// [`crate::asset::AssetInstance`] ids in transfer intents — resolving
+/// from a group or instrument is the caller's job.
 #[async_trait]
 pub trait ChainService: Send + Sync {
+    /// Take a [`TransferIntent`] and produce the chain-specific
+    /// [`UnsignedTransaction`] ready to sign. Validates that the
+    /// asset instance belongs to the target network.
     async fn prepare_transfer(
         &self,
         account: AccountRef,
@@ -16,18 +39,38 @@ pub trait ChainService: Send + Sync {
         intent: TransferIntent,
     ) -> Result<UnsignedTransaction, ChainError>;
 
+    /// Build the [`SigningRequest`] a [`crate::signing::SignerProvider`]
+    /// must sign over for this unsigned transaction. Synchronous
+    /// because no RPC should be needed at this step.
     fn signing_request(&self, unsigned: &UnsignedTransaction)
         -> Result<SigningRequest, ChainError>;
 
+    /// Combine the unsigned transaction with whatever
+    /// [`SigningResponse`] shape the signer returned, producing a
+    /// [`SignedTransaction`] ready to broadcast. Some signers
+    /// (`SubmittedTransaction`) may bypass this step entirely; chain
+    /// services that don't support that path return
+    /// [`ChainError::TransactionBuildFailed`].
     fn assemble_signed_transaction(
         &self,
         unsigned: UnsignedTransaction,
         response: SigningResponse,
     ) -> Result<SignedTransaction, ChainError>;
 
+    /// Submit the signed transaction to the network's RPC and return
+    /// the resulting tx hash.
     async fn broadcast(&self, signed: SignedTransaction) -> Result<BroadcastResult, ChainError>;
 }
 
+/// In-tree mock EVM chain service. Used by the smoke flow and by
+/// downstream tests that want a deterministic
+/// `prepare → sign → broadcast` pipeline without standing up RLP
+/// encoding or a real RPC client.
+///
+/// Real EVM execution lands in a separate `atlas-evm` crate
+/// (deferred). The mock enforces the same network-prefix rule as a
+/// real service would, so tests of higher-level wiring catch
+/// network-mismatch bugs.
 #[derive(Clone, Debug, Default)]
 pub struct MockEvmService;
 
