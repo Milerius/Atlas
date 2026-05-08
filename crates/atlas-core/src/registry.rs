@@ -82,9 +82,7 @@ impl Registry {
     }
 
     pub fn network(&self, id: &str) -> Result<&Network, RegistryError> {
-        self.networks
-            .get(id)
-            .ok_or_else(|| missing_network(id))
+        self.networks.get(id).ok_or_else(|| missing_network(id))
     }
 
     pub fn asset_group(&self, id: &str) -> Result<&AssetGroup, RegistryError> {
@@ -105,7 +103,10 @@ impl Registry {
             .ok_or_else(|| missing_asset_instance(id))
     }
 
-    pub fn asset_instances_for_group(&self, group_id: &str) -> Result<Vec<&AssetInstance>, RegistryError> {
+    pub fn asset_instances_for_group(
+        &self,
+        group_id: &str,
+    ) -> Result<Vec<&AssetInstance>, RegistryError> {
         self.asset_group(group_id)?;
         let instrument_ids = self
             .asset_instruments
@@ -131,7 +132,9 @@ impl Registry {
 
         for instrument in self.asset_instruments.values() {
             if !self.asset_groups.contains_key(instrument.group_id.as_str()) {
-                return Err(RegistryError::MissingAssetGroup(instrument.group_id.clone()));
+                return Err(RegistryError::MissingAssetGroup(
+                    instrument.group_id.clone(),
+                ));
             }
         }
 
@@ -139,8 +142,13 @@ impl Registry {
             if !self.networks.contains_key(instance.network.as_str()) {
                 return Err(RegistryError::MissingNetwork(instance.network.clone()));
             }
-            if !self.asset_instruments.contains_key(instance.instrument_id.as_str()) {
-                return Err(RegistryError::MissingAssetInstrument(instance.instrument_id.clone()));
+            if !self
+                .asset_instruments
+                .contains_key(instance.instrument_id.as_str())
+            {
+                return Err(RegistryError::MissingAssetInstrument(
+                    instance.instrument_id.clone(),
+                ));
             }
             if let Err(err) = instance.validate_shape() {
                 return Err(RegistryError::InvalidReference {
@@ -150,7 +158,9 @@ impl Registry {
         }
 
         for network in self.networks.values() {
-            let native = self.asset_instances.get(network.native_asset_instance_id.as_str());
+            let native = self
+                .asset_instances
+                .get(network.native_asset_instance_id.as_str());
             match native {
                 Some(instance) if instance.network == network.id => {}
                 Some(_) => {
@@ -161,7 +171,11 @@ impl Registry {
                         ),
                     });
                 }
-                None => return Err(RegistryError::MissingAssetInstance(network.native_asset_instance_id.clone())),
+                None => {
+                    return Err(RegistryError::MissingAssetInstance(
+                        network.native_asset_instance_id.clone(),
+                    ))
+                }
             }
         }
 

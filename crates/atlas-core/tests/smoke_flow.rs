@@ -43,7 +43,9 @@ async fn base_usdc_transfer_smoke_flow_uses_exact_asset_instance() {
         .unwrap();
     let request = service.signing_request(&unsigned).unwrap();
     let response = signer.sign(request).await.unwrap();
-    let signed = service.assemble_signed_transaction(unsigned, response).unwrap();
+    let signed = service
+        .assemble_signed_transaction(unsigned, response)
+        .unwrap();
     let broadcast = service.broadcast(signed).await.unwrap();
 
     assert_eq!(broadcast.tx_hash, "0xmock");

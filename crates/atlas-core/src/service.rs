@@ -16,7 +16,8 @@ pub trait ChainService: Send + Sync {
         intent: TransferIntent,
     ) -> Result<UnsignedTransaction, ChainError>;
 
-    fn signing_request(&self, unsigned: &UnsignedTransaction) -> Result<SigningRequest, ChainError>;
+    fn signing_request(&self, unsigned: &UnsignedTransaction)
+        -> Result<SigningRequest, ChainError>;
 
     fn assemble_signed_transaction(
         &self,
@@ -38,8 +39,14 @@ impl ChainService for MockEvmService {
         network: NetworkId,
         intent: TransferIntent,
     ) -> Result<UnsignedTransaction, ChainError> {
-        if !intent.asset_instance_id.as_str().starts_with(network.as_str()) {
-            return Err(ChainError::UnsupportedAssetInstance(intent.asset_instance_id));
+        if !intent
+            .asset_instance_id
+            .as_str()
+            .starts_with(network.as_str())
+        {
+            return Err(ChainError::UnsupportedAssetInstance(
+                intent.asset_instance_id,
+            ));
         }
         Ok(UnsignedTransaction {
             account,
@@ -49,7 +56,10 @@ impl ChainService for MockEvmService {
         })
     }
 
-    fn signing_request(&self, unsigned: &UnsignedTransaction) -> Result<SigningRequest, ChainError> {
+    fn signing_request(
+        &self,
+        unsigned: &UnsignedTransaction,
+    ) -> Result<SigningRequest, ChainError> {
         Ok(SigningRequest {
             account: unsigned.account.clone(),
             network: unsigned.network.clone(),
@@ -77,15 +87,19 @@ impl ChainService for MockEvmService {
                 network: unsigned.network,
                 raw,
             }),
-            SigningResponse::SubmittedTransaction { tx_hash, .. } => Err(ChainError::TransactionBuildFailed(format!(
-                "mock service expected signed bytes, got submitted hash {tx_hash}"
-            ))),
+            SigningResponse::SubmittedTransaction { tx_hash, .. } => {
+                Err(ChainError::TransactionBuildFailed(format!(
+                    "mock service expected signed bytes, got submitted hash {tx_hash}"
+                )))
+            }
         }
     }
 
     async fn broadcast(&self, signed: SignedTransaction) -> Result<BroadcastResult, ChainError> {
         if signed.raw.is_empty() {
-            return Err(ChainError::BroadcastFailed("empty signed transaction".to_string()));
+            return Err(ChainError::BroadcastFailed(
+                "empty signed transaction".to_string(),
+            ));
         }
         Ok(BroadcastResult {
             tx_hash: "0xmock".to_string(),
@@ -116,12 +130,18 @@ mod tests {
         };
 
         let unsigned = service
-            .prepare_transfer(AccountRef::from_str("account-1").unwrap(), NetworkId::from_str("eip155:8453").unwrap(), intent)
+            .prepare_transfer(
+                AccountRef::from_str("account-1").unwrap(),
+                NetworkId::from_str("eip155:8453").unwrap(),
+                intent,
+            )
             .await
             .unwrap();
         let request = service.signing_request(&unsigned).unwrap();
         let response = signer.sign(request).await.unwrap();
-        let signed = service.assemble_signed_transaction(unsigned, response).unwrap();
+        let signed = service
+            .assemble_signed_transaction(unsigned, response)
+            .unwrap();
         let broadcast = service.broadcast(signed).await.unwrap();
 
         assert_eq!(broadcast.tx_hash, "0xmock");

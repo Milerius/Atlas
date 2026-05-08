@@ -53,11 +53,13 @@ impl AssetInstance {
     pub fn validate_shape(&self) -> Result<(), AssetError> {
         match (&self.standard, self.contract.as_deref()) {
             (AssetStandard::Native, None) => Ok(()),
-            (AssetStandard::Native, Some(_)) => {
-                Err(AssetError::InvalidContract("native asset must not have a contract".to_string()))
-            }
+            (AssetStandard::Native, Some(_)) => Err(AssetError::InvalidContract(
+                "native asset must not have a contract".to_string(),
+            )),
             (AssetStandard::Erc20, Some(value)) if !value.trim().is_empty() => Ok(()),
-            (AssetStandard::Erc20, _) => Err(AssetError::MissingRequiredIdentifier("erc20 contract".to_string())),
+            (AssetStandard::Erc20, _) => Err(AssetError::MissingRequiredIdentifier(
+                "erc20 contract".to_string(),
+            )),
         }
     }
 }
@@ -109,7 +111,7 @@ pub struct AssetMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::{AssetGroupId, AssetInstrumentId, AssetInstanceId, NetworkId};
+    use crate::id::{AssetGroupId, AssetInstanceId, AssetInstrumentId, NetworkId};
     use std::str::FromStr;
 
     #[test]

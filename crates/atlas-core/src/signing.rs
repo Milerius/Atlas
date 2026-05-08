@@ -73,7 +73,9 @@ impl SignerProvider for MockSigner {
 
     async fn sign(&self, request: SigningRequest) -> Result<SigningResponse, SigningError> {
         if request.payload.is_empty() {
-            return Err(SigningError::UnsupportedPayload("empty payload".to_string()));
+            return Err(SigningError::UnsupportedPayload(
+                "empty payload".to_string(),
+            ));
         }
         Ok(SigningResponse::SignatureOnly {
             signer: self.id.clone(),

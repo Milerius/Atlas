@@ -114,7 +114,9 @@ mod tests {
             name: "Base".to_string(),
             environment: NetworkEnvironment::Mainnet,
             native_asset_instance_id: AssetInstanceId::from_str("eip155:8453/native:eth").unwrap(),
-            rpc: RpcConfig { default_url: "https://mainnet.base.org".to_string() },
+            rpc: RpcConfig {
+                default_url: "https://mainnet.base.org".to_string(),
+            },
             explorers: vec![],
             features: NetworkFeatures::default(),
         };

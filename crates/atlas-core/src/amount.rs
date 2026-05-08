@@ -44,9 +44,15 @@ mod tests {
 
     #[test]
     fn raw_amount_preserves_large_integer() {
-        let amount = RawAmount::new(BigInt::parse_bytes(b"1000000000000000000000000000000", 10).unwrap(), 18);
+        let amount = RawAmount::new(
+            BigInt::parse_bytes(b"1000000000000000000000000000000", 10).unwrap(),
+            18,
+        );
         assert_eq!(amount.decimals(), 18);
-        assert_eq!(amount.value().to_string(), "1000000000000000000000000000000");
+        assert_eq!(
+            amount.value().to_string(),
+            "1000000000000000000000000000000"
+        );
     }
 
     #[test]
