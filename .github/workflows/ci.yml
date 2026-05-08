@@ -62,6 +62,17 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
 
+  wasm:
+    name: WASM build (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p atlas-core --target wasm32-unknown-unknown
+
   deny:
     name: Cargo Deny
     runs-on: ubuntu-latest

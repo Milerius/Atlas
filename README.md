@@ -101,7 +101,7 @@ The first scope is a strict blockchain core. Higher product layers (accounts, ca
 
 🚦 **Typed errors everywhere** — `RegistryError`, `AssetError`, `ChainError`, `SigningError`, `RpcError`, `AmountError` with named variants. No `Box<dyn Error>` in SDK paths.
 
-🧪 **Verification rigor** — 47 tests, 99.73% line coverage, `cargo deny`, `cargo careful`, mutation testing nightly, `cargo doc -D warnings`.
+🧪 **Verification rigor** — 53 tests, 99.73% line coverage, Bolero property tests, Kani proof scaffold, `cargo deny`, `cargo careful`, mutation testing nightly, `cargo doc -D warnings`, `wasm32-unknown-unknown` build check.
 
 🚫 **No unsafe** — `#![forbid(unsafe_code)]` at the crate root.
 
@@ -112,6 +112,7 @@ The first scope is a strict blockchain core. Higher product layers (accounts, ca
 | Crate | Purpose | Tests |
 |---|---|---:|
 | [`atlas-core`](crates/atlas-core/) | Typed IDs, big-int amounts, chain/asset domain models, split registries with validation, provider-neutral signing trait, `ChainService` trait + `MockEvmService` | 47 |
+| [`atlas-verify`](crates/atlas-verify/) | Bolero property tests + Kani proofs targeting atlas-core boundary invariants | 6 |
 
 ---
 
@@ -179,21 +180,25 @@ let result   = service.broadcast(signed).await?;
 <details>
 <summary><h2>🧪 Verification Tiers</h2></summary>
 
-| Tier | Tool                               | Cadence       | What it catches                                                       |
-|------|------------------------------------|---------------|-----------------------------------------------------------------------|
-| 1    | Unit tests (47 total)              | Every PR      | Per-module behavior, registry error paths, signing/service boundaries |
-| 2    | Fixture tests                      | Every PR      | Valid + invalid registry JSON, missing references, native asset rules |
-| 3    | Smoke test (`smoke_flow`)          | Every PR      | End-to-end: registry load → instance lookup → mock sign → broadcast   |
-| 4    | `cargo fmt --check`                | Every PR      | Formatting drift                                                      |
-| 5    | `cargo clippy -D warnings`         | Every PR      | Lint regressions on Linux + macOS                                     |
-| 6    | `cargo doc -D warnings`            | Every PR      | Broken doc links and rustdoc warnings                                 |
-| 7    | `cargo deny`                       | Every PR      | License + advisory + dependency hygiene                               |
-| 8    | `cargo careful`                    | Every PR      | Extra UB detection beyond standard tests                              |
-| 9    | Coverage (`cargo llvm-cov`)        | Every PR      | Line coverage tracked via Codecov (currently 99.73%)                  |
-| 10   | Mutation testing (`cargo-mutants`) | Nightly       | Test-suite quality regression                                         |
-| 11   | Full HTML coverage                 | Nightly       | Detailed line-level coverage artifact                                 |
+| Tier | Tool                                | Cadence       | What it catches                                                                |
+|------|-------------------------------------|---------------|--------------------------------------------------------------------------------|
+| 1    | Unit tests (47 in atlas-core)       | Every PR      | Per-module behavior, registry error paths, signing/service boundaries          |
+| 2    | Fixture tests                       | Every PR      | Valid + invalid registry JSON, missing references, native asset rules          |
+| 3    | Smoke test (`smoke_flow`)           | Every PR      | End-to-end: registry load → instance lookup → mock sign → broadcast            |
+| 4    | Bolero property tests (6 in verify) | Every PR      | Generated input across `Id`, `RawAmount`, `validate_shape`; replayable on fail |
+| 5    | `cargo fmt --check`                 | Every PR      | Formatting drift                                                               |
+| 6    | `cargo clippy -D warnings`          | Every PR      | Lint regressions on Linux + macOS                                              |
+| 7    | `cargo doc -D warnings`             | Every PR      | Broken doc links and rustdoc warnings                                          |
+| 8    | `wasm32-unknown-unknown` build      | Every PR      | atlas-core stays WASM-compilable                                               |
+| 9    | `cargo deny`                        | Every PR      | License + advisory + dependency hygiene                                        |
+| 10   | `cargo careful`                     | Every PR      | Extra UB detection beyond standard tests                                       |
+| 11   | Coverage (`cargo llvm-cov`)         | Every PR      | Line coverage tracked via Codecov (currently 99.73%)                           |
+| 12   | Mutation testing (`cargo-mutants`)  | Nightly       | Test-suite quality regression                                                  |
+| 13   | Full HTML coverage                  | Nightly       | Detailed line-level coverage artifact                                          |
+| 14   | Kani proofs (3 scaffold proofs)     | Nightly       | Bounded model checking for registry version invariants                         |
+| 15   | Bolero extended (100k iterations)   | Nightly       | Property tests with deeper input space than the PR-time run                    |
 
-Every PR runs: fmt → clippy (Linux + macOS) → test (Linux + macOS) → doc → deny → careful → coverage.
+Every PR runs: fmt → clippy (Linux + macOS) → test (Linux + macOS) → bolero properties → doc → wasm → deny → careful → coverage.
 
 </details>
 

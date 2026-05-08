@@ -43,3 +43,35 @@ jobs:
         with:
           name: coverage-html
           path: target/llvm-cov/html/
+
+  kani:
+    name: Kani Proofs
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Kani proofs
+        uses: model-checking/kani-github-action@v1
+        with:
+          args: -p atlas-verify
+      - name: Extract proof results
+        if: always()
+        run: |
+          echo "## Kani Proof Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E '(VERIFICATION|RESULT)' kani-output.txt 2>/dev/null || echo "No results captured"
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  bolero-extended:
+    name: Bolero Extended (fuzz mode)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run property tests with extended iterations
+        run: cargo test -p atlas-verify --release -- --test-threads=1
+        env:
+          BOLERO_RANDOM_SEED: "0"
+          BOLERO_RUNS: "100000"
