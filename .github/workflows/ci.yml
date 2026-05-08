@@ -49,7 +49,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
-      - run: cargo nextest run --workspace --all-features --no-tests=warn
+      # nextest can't run cucumber's `harness = false` test binary, so the
+      # scenarios crate runs separately in the bdd job below.
+      - run: cargo nextest run --workspace --all-features --no-tests=warn --exclude atlas-scenarios
+
+  bdd:
+    name: BDD scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p atlas-scenarios --test atlas_bdd
 
   doc:
     name: Documentation
