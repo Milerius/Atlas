@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "assetGroups": [{ "id": "eth", "symbol": "ETH", "name": "Ethereum" }],
+  "assetInstruments": [
+    {
+      "id": "eth.native",
+      "groupId": "eth",
+      "assetClass": "crypto",
+      "kind": "native_coin",
+      "symbol": "ETH",
+      "name": "Ether",
+      "decimals": 18,
+      "traits": ["fungible", "transferable", "gas_asset"]
+    }
+  ],
+  "assetInstances": [
+    {
+      "id": "eip155:1/native:eth",
+      "instrumentId": "eth.native",
+      "network": "eip155:1",
+      "standard": "native",
+      "decimals": 18,
+      "contract": "0xabc",
+      "capabilities": ["balance"]
+    }
+  ]
+}

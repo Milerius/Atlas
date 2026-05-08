@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "assetGroups": [{ "id": "bad", "symbol": "BAD", "name": "Bad Token" }],
+  "assetInstruments": [
+    {
+      "id": "bad.token",
+      "groupId": "bad",
+      "assetClass": "crypto",
+      "kind": "fungible_token",
+      "symbol": "BAD",
+      "name": "Bad Token",
+      "decimals": 18,
+      "traits": ["fungible", "transferable"]
+    }
+  ],
+  "assetInstances": [
+    {
+      "id": "eip155:999/erc20:0xBAD",
+      "instrumentId": "bad.token",
+      "network": "eip155:999",
+      "standard": "erc20",
+      "decimals": 18,
+      "contract": "0xBAD",
+      "capabilities": ["balance"]
+    }
+  ]
+}

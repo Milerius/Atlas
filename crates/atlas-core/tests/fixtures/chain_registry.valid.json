@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "chains": [
+    {
+      "id": "evm",
+      "name": "EVM",
+      "family": "account_based",
+      "addressFormat": "evm_address",
+      "defaultCurve": "secp256k1",
+      "supportedStandards": ["native", "erc20"],
+      "capabilities": ["balance", "transfer", "approve", "contract_call", "broadcast"]
+    }
+  ],
+  "networks": [
+    {
+      "id": "eip155:1",
+      "alias": "ethereum",
+      "chainId": "1",
+      "chain": "evm",
+      "name": "Ethereum",
+      "environment": "mainnet",
+      "nativeAssetInstanceId": "eip155:1/native:eth",
+      "rpc": { "defaultUrl": "https://ethereum-rpc.publicnode.com" },
+      "explorers": [],
+      "features": { "eip1559": true, "erc20": true }
+    },
+    {
+      "id": "eip155:8453",
+      "alias": "base",
+      "chainId": "8453",
+      "chain": "evm",
+      "name": "Base",
+      "environment": "mainnet",
+      "nativeAssetInstanceId": "eip155:8453/native:eth",
+      "rpc": { "defaultUrl": "https://mainnet.base.org" },
+      "explorers": [],
+      "features": { "eip1559": true, "erc20": true, "opStackL1Fee": true }
+    }
+  ]
+}
