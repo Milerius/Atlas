@@ -1,0 +1,11 @@
+# cargo-mutants configuration.
+#
+# Exclude paths whose mutants can't meaningfully be caught by `cargo test`,
+# either because the code is gated behind a non-test cfg or because it's
+# only exercised by an external verifier.
+
+# Kani proofs run under `cargo kani -p atlas-verify`, not `cargo test`.
+# Mutating their bodies can never be caught by tests by design.
+exclude_globs = [
+    "crates/atlas-verify/src/proofs.rs",
+]

@@ -134,6 +134,29 @@ mod tests {
     }
 
     #[test]
+    fn erc20_instance_rejects_whitespace_only_contract() {
+        // The match guard `!value.trim().is_empty()` must hold; cargo-mutants
+        // flagged that replacing this with `true` survived our property test
+        // (Bolero's String generator rarely produces whitespace-only strings).
+        for contract in ["", " ", "   ", "\t", "\n", " \t\n "] {
+            let instance = AssetInstance {
+                id: AssetInstanceId::from_str("eip155:1/erc20:test").unwrap(),
+                instrument_id: AssetInstrumentId::from_str("test").unwrap(),
+                network: NetworkId::from_str("eip155:1").unwrap(),
+                standard: AssetStandard::Erc20,
+                decimals: 6,
+                contract: Some(contract.to_string()),
+                capabilities: vec![AssetCapability::Balance],
+                metadata: AssetMetadata::default(),
+            };
+            assert!(
+                instance.validate_shape().is_err(),
+                "whitespace-only contract {contract:?} must be rejected",
+            );
+        }
+    }
+
+    #[test]
     fn native_instance_rejects_contract() {
         let instance = AssetInstance {
             id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
