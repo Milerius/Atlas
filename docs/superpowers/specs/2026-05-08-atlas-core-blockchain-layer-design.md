@@ -627,7 +627,8 @@ And it never signs an AssetGroup
 
 The following topics should be separate specs:
 
-- Product accounts and neobank-style account containers.
+- Product accounts and neobank-style account containers:
+  `docs/superpowers/specs/2026-05-08-atlas-product-accounts-composition-notes.md`.
 - Unified portfolio and backend balance APIs.
 - Token discovery and remote asset registry reconciliation.
 - Concrete signer providers: local keys, MPC, Privy, account abstraction.
