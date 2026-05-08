@@ -50,16 +50,31 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
-      - name: Run Kani proofs
-        uses: model-checking/kani-github-action@v1
+      # Cache the Kani toolchain (~/.kani) and the kani-verifier binary
+      # (~/.cargo/bin/cargo-kani). First run installs cold (~3 min); cached
+      # runs skip straight to the proofs.
+      - uses: actions/cache@v4
+        id: kani-cache
         with:
-          args: -p atlas-verify
+          path: |
+            ~/.cargo/bin/cargo-kani
+            ~/.cargo/bin/kani
+            ~/.kani
+          key: kani-${{ runner.os }}-v0.59.0
+      - name: Install Kani (cache miss only)
+        if: steps.kani-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked kani-verifier
+          cargo kani setup
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Kani proofs
+        run: cargo kani -p atlas-verify --default-unwind 2 2>&1 | tee kani-output.txt
       - name: Extract proof results
         if: always()
         run: |
           echo "## Kani Proof Results" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E '(VERIFICATION|RESULT)' kani-output.txt 2>/dev/null || echo "No results captured"
+          grep -E '(VERIFICATION|RESULT|harness|SUCCESSFUL|FAILED)' kani-output.txt 2>/dev/null | head -40 || echo "No results captured"
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   bolero-extended:
