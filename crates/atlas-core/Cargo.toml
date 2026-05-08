@@ -1,0 +1,18 @@
+[package]
+name = "atlas-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio.workspace = true
