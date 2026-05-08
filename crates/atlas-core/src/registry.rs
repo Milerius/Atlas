@@ -1,3 +1,16 @@
+//! Split chain + asset registry, with cross-reference validation.
+//!
+//! Atlas's registry is two documents — [`ChainRegistryDocument`] (slow-
+//! moving chain data) and [`AssetRegistryDocument`] (fast-moving asset
+//! data) — combined into a [`Registry`] that exposes typed lookups.
+//!
+//! Construction goes through [`Registry::from_documents`] which
+//! validates the combined registry before exposing it: unknown
+//! versions, duplicate ids, dangling cross-references, and instances
+//! whose `(standard, contract)` shape is invalid are all rejected.
+//! Once you have a [`Registry`], every lookup either returns the
+//! requested entity or a typed [`RegistryError`].
+
 use crate::{
     asset::{AssetGroup, AssetInstance, AssetInstrument},
     chain::{Chain, Network},
@@ -7,26 +20,57 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Highest registry-document version atlas-core understands. Documents
+/// at any other version are rejected with
+/// [`RegistryError::UnsupportedVersion`] — forward compatibility is
+/// opt-in, never silent.
 pub const LATEST_REGISTRY_VERSION: u32 = 1;
 
+/// Wire format for the slow-moving chain side of the registry —
+/// chains, networks, RPC defaults, and native asset references.
+///
+/// Deserialized from JSON / YAML / TOML / etc. via serde, then handed
+/// to [`Registry::from_documents`] alongside an
+/// [`AssetRegistryDocument`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ChainRegistryDocument {
+    /// Document schema version. Must equal
+    /// [`LATEST_REGISTRY_VERSION`].
     pub version: u32,
+    /// Chain families (`evm`, `solana`, …).
     pub chains: Vec<Chain>,
+    /// Concrete networks belonging to those chains.
     pub networks: Vec<Network>,
 }
 
+/// Wire format for the fast-moving asset side of the registry —
+/// groups, instruments, instances, contracts, decimals, capabilities.
+///
+/// Deserialized from JSON / YAML / TOML / etc. via serde, then handed
+/// to [`Registry::from_documents`] alongside a
+/// [`ChainRegistryDocument`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AssetRegistryDocument {
+    /// Document schema version. Must equal
+    /// [`LATEST_REGISTRY_VERSION`].
     pub version: u32,
+    /// Display-level groupings (e.g. `usdc`, `eth`).
     #[serde(rename = "assetGroups")]
     pub asset_groups: Vec<AssetGroup>,
+    /// Issuer-level instruments (e.g. `usdc.circle`).
     #[serde(rename = "assetInstruments")]
     pub asset_instruments: Vec<AssetInstrument>,
+    /// Concrete on-chain instances (e.g. `eip155:8453/native:eth`).
     #[serde(rename = "assetInstances")]
     pub asset_instances: Vec<AssetInstance>,
 }
 
+/// Validated, in-memory registry with typed lookups and group
+/// resolution.
+///
+/// Build via [`Registry::from_documents`]. Internal storage is private
+/// `BTreeMap`s keyed by string id; lookups return references to the
+/// owned entries.
 #[derive(Clone, Debug)]
 pub struct Registry {
     chains: BTreeMap<String, Chain>,
@@ -37,6 +81,24 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Build a [`Registry`] from a chain document and an asset
+    /// document, running every validation rule before returning a
+    /// reference to a usable registry.
+    ///
+    /// Failure modes (each returns a typed [`RegistryError`]):
+    ///
+    /// - Either document declares an unknown `version`.
+    /// - Any of the five collections (chains, networks, groups,
+    ///   instruments, instances) contains a duplicate id.
+    /// - A network references a chain that isn't in the chain doc.
+    /// - An instrument references a group that isn't in the asset
+    ///   doc.
+    /// - An asset instance references a missing network or
+    ///   instrument.
+    /// - An instance's `(standard, contract)` shape fails
+    ///   [`AssetInstance::validate_shape`].
+    /// - A network's `native_asset_instance_id` doesn't exist, or the
+    ///   referenced instance belongs to a different network.
     pub fn from_documents(
         chain_doc: ChainRegistryDocument,
         asset_doc: AssetRegistryDocument,
@@ -70,28 +132,46 @@ impl Registry {
         Ok(registry)
     }
 
+    /// Look up a network by [`NetworkId`] string. Returns
+    /// [`RegistryError::MissingNetwork`] when the id isn't registered,
+    /// or [`RegistryError::InvalidReference`] when the lookup string
+    /// is empty.
     pub fn network(&self, id: &str) -> Result<&Network, RegistryError> {
         self.networks.get(id).ok_or_else(|| missing_network(id))
     }
 
+    /// Look up a display-level asset group by [`AssetGroupId`] string.
     pub fn asset_group(&self, id: &str) -> Result<&AssetGroup, RegistryError> {
         self.asset_groups
             .get(id)
             .ok_or_else(|| missing_asset_group(id))
     }
 
+    /// Look up an issuer-level asset instrument by
+    /// [`AssetInstrumentId`] string.
     pub fn asset_instrument(&self, id: &str) -> Result<&AssetInstrument, RegistryError> {
         self.asset_instruments
             .get(id)
             .ok_or_else(|| missing_asset_instrument(id))
     }
 
+    /// Look up a concrete on-chain asset instance by
+    /// [`AssetInstanceId`] string. This is the only lookup that
+    /// returns an executable shape.
     pub fn asset_instance(&self, id: &str) -> Result<&AssetInstance, RegistryError> {
         self.asset_instances
             .get(id)
             .ok_or_else(|| missing_asset_instance(id))
     }
 
+    /// Resolve a display group to all concrete on-chain instances that
+    /// belong to it.
+    ///
+    /// Walks instruments under the given group and collects every
+    /// instance pointing at one of those instruments. The returned
+    /// slice is sorted by instance id for deterministic iteration.
+    /// Returns [`RegistryError::MissingAssetGroup`] if the group id
+    /// isn't registered.
     pub fn asset_instances_for_group(
         &self,
         group_id: &str,

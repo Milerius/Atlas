@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "chains": [
+    {
+      "id": "evm",
+      "name": "EVM",
+      "family": "account_based",
+      "addressFormat": "evm_address",
+      "defaultCurve": "secp256k1",
+      "supportedStandards": ["native", "erc20"],
+      "capabilities": ["balance", "transfer", "approve", "contract_call", "broadcast"]
+    },
+    {
+      "id": "solana",
+      "name": "Solana",
+      "family": "account_based",
+      "addressFormat": "solana_pubkey",
+      "defaultCurve": "ed25519",
+      "supportedStandards": ["native", "spl"],
+      "capabilities": ["balance", "transfer", "broadcast"]
+    }
+  ],
+  "networks": [
+    {
+      "id": "eip155:1",
+      "alias": "ethereum",
+      "chainId": "1",
+      "chain": "evm",
+      "name": "Ethereum",
+      "environment": "mainnet",
+      "nativeAssetInstanceId": "eip155:1/native:eth",
+      "rpc": { "defaultUrl": "https://rpc.example.com/ethereum" },
+      "explorers": [
+        {
+          "name": "Etherscan",
+          "tx": "https://etherscan.io/tx/{tx}",
+          "address": "https://etherscan.io/address/{address}"
+        }
+      ],
+      "features": { "eip1559": true, "erc20": true }
+    },
+    {
+      "id": "eip155:8453",
+      "alias": "base",
+      "chainId": "8453",
+      "chain": "evm",
+      "name": "Base",
+      "environment": "mainnet",
+      "nativeAssetInstanceId": "eip155:8453/native:eth",
+      "rpc": { "defaultUrl": "https://rpc.example.com/base" },
+      "explorers": [
+        {
+          "name": "Basescan",
+          "tx": "https://basescan.org/tx/{tx}",
+          "address": "https://basescan.org/address/{address}"
+        }
+      ],
+      "features": { "eip1559": true, "erc20": true, "opStackL1Fee": true }
+    },
+    {
+      "id": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "alias": "solana-mainnet",
+      "chain": "solana",
+      "name": "Solana Mainnet",
+      "environment": "mainnet",
+      "nativeAssetInstanceId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/native:sol",
+      "rpc": { "defaultUrl": "https://rpc.example.com/solana" },
+      "explorers": [
+        {
+          "name": "Solscan",
+          "tx": "https://solscan.io/tx/{tx}",
+          "address": "https://solscan.io/account/{address}"
+        }
+      ]
+    }
+  ]
+}
