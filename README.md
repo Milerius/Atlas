@@ -148,7 +148,6 @@ use atlas_core::{
 use num_bigint::BigInt;
 use std::str::FromStr;
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
 let chain_doc: ChainRegistryDocument = serde_json::from_str(include_str!("chain_registry.json"))?;
 let asset_doc: AssetRegistryDocument = serde_json::from_str(include_str!("asset_registry.json"))?;
 let registry = Registry::from_documents(chain_doc, asset_doc)?;
@@ -173,8 +172,6 @@ let request  = service.signing_request(&unsigned)?;
 let response = signer.sign(request).await?;
 let signed   = service.assemble_signed_transaction(unsigned, response)?;
 let result   = service.broadcast(signed).await?;
-# Ok(())
-# }
 ```
 
 ---
