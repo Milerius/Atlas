@@ -78,10 +78,15 @@ fn official_solana_usdc_is_an_spl_instance_with_circle_mint() {
             "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/spl:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         )
         .unwrap();
-    assert_eq!(instance.standard, atlas_core::asset::AssetStandard::Spl,);
+    assert_eq!(instance.standard, atlas_core::asset::AssetStandard::Spl);
     assert_eq!(
         instance.contract.as_deref(),
-        Some("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
+        Some("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
     );
     assert_eq!(instance.decimals, 6);
+    // Exercise the new AssetStandard::Spl arm of validate_shape so this
+    // test catches regressions in the validation logic, not just the data.
+    instance
+        .validate_shape()
+        .expect("official Solana USDC SPL instance validates");
 }

@@ -183,7 +183,7 @@ let result   = service.broadcast(signed).await?;
 
 | Tier | Tool                                | Cadence       | What it catches                                                                |
 |------|-------------------------------------|---------------|--------------------------------------------------------------------------------|
-| 1    | Unit tests (47 in atlas-core)       | Every PR      | Per-module behavior, registry error paths, signing/service boundaries          |
+| 1    | Unit tests (49 in atlas-core)       | Every PR      | Per-module behavior, registry error paths, signing/service boundaries          |
 | 2    | Fixture tests                       | Every PR      | Valid + invalid registry JSON, missing references, native asset rules          |
 | 3    | Smoke test (`smoke_flow`)           | Every PR      | End-to-end: registry load → instance lookup → mock sign → broadcast            |
 | 4    | Bolero property tests (6 in verify) | Every PR      | Generated input across `Id`, `RawAmount`, `validate_shape`; replayable on fail |

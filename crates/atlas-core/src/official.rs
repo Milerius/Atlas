@@ -17,6 +17,12 @@
 //! Atlas does not assume any particular network or asset set at the
 //! `Registry::from_documents` boundary.
 
+// NOTE: the include_str! paths reach outside the crate root, which works
+// fine for workspace-internal builds but blocks `cargo package` /
+// `cargo publish`. atlas-core is not on a publish track today; when it
+// is, mirror the JSON into the crate via a build.rs that copies into
+// `OUT_DIR`, or move the files under `crates/atlas-core/registries/`.
+
 /// Atlas's official chain registry document, as embedded JSON.
 ///
 /// Lists the EVM and Solana chain families and three networks: Ethereum

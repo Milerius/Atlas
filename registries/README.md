@@ -13,12 +13,16 @@ Atlas's curated chain and asset registry, shipped in-tree as JSON.
 use atlas_core::official::{ASSET_REGISTRY_JSON, CHAIN_REGISTRY_JSON};
 use atlas_core::registry::{AssetRegistryDocument, ChainRegistryDocument, Registry};
 
-let chain_doc: ChainRegistryDocument = serde_json::from_str(CHAIN_REGISTRY_JSON)?;
-let asset_doc: AssetRegistryDocument = serde_json::from_str(ASSET_REGISTRY_JSON)?;
-let registry = Registry::from_documents(chain_doc, asset_doc)?;
+let chain_doc: ChainRegistryDocument = serde_json::from_str(CHAIN_REGISTRY_JSON).unwrap();
+let asset_doc: AssetRegistryDocument = serde_json::from_str(ASSET_REGISTRY_JSON).unwrap();
+let registry = Registry::from_documents(chain_doc, asset_doc).unwrap();
 ```
 
 The JSON files are embedded into `atlas-core` at compile time via `include_str!`, so consumers get them for free without a filesystem round-trip.
+
+## Schema notes
+
+- **`chainId`** is an EVM-specific decimal string (e.g. `"1"`, `"8453"`). It's optional on the [`Network`](../crates/atlas-core/src/chain.rs) struct and omitted entirely for non-EVM networks (Solana, future Sui / UTXO). Don't rely on it as a universal identifier — use `Network.id` (CAIP-2 form) when you need a stable cross-chain key.
 
 ## Coverage
 
