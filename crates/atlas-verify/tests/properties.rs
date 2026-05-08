@@ -101,18 +101,21 @@ fn raw_amount_checked_add_obeys_decimals_invariant() {
 // ── AssetInstance::validate_shape ──────────────────────────────────────────
 
 /// `validate_shape` partitions `(Standard, Option<contract>)` exactly:
-///   Native + None         → Ok
-///   Native + Some(_)      → Err
-///   Erc20  + Some(s)      → Ok iff `s.trim()` is non-empty
-///   Erc20  + None         → Err
+///   Native + None              → Ok
+///   Native + Some(_)           → Err
+///   Erc20  + Some(non-empty)   → Ok
+///   Erc20  + None|Some(empty)  → Err
+///   Spl    + Some(non-empty)   → Ok
+///   Spl    + None|Some(empty)  → Err
 #[test]
 fn validate_shape_partition_is_total() {
-    check!().with_type::<(bool, Option<String>, u8)>().for_each(
-        |(is_native, contract, decimals): &(bool, Option<String>, u8)| {
-            let standard = if *is_native {
-                AssetStandard::Native
-            } else {
-                AssetStandard::Erc20
+    check!().with_type::<(u8, Option<String>, u8)>().for_each(
+        |(standard_idx, contract, decimals): &(u8, Option<String>, u8)| {
+            let standard_kind = standard_idx % 3;
+            let standard = match standard_kind {
+                0 => AssetStandard::Native,
+                1 => AssetStandard::Erc20,
+                _ => AssetStandard::Spl,
             };
             let instance = AssetInstance {
                 id: AssetInstanceId::new("eip155:1/test").unwrap(),
@@ -125,11 +128,14 @@ fn validate_shape_partition_is_total() {
                 metadata: AssetMetadata::default(),
             };
             let result = instance.validate_shape();
-            match (is_native, contract.as_deref()) {
-                (true, None) => assert!(result.is_ok()),
-                (true, Some(_)) => assert!(result.is_err()),
-                (false, Some(s)) if !s.trim().is_empty() => assert!(result.is_ok()),
-                (false, _) => assert!(result.is_err()),
+            match (standard_kind, contract.as_deref()) {
+                (0, None) => assert!(result.is_ok()),
+                (0, Some(_)) => assert!(result.is_err()),
+                (1, Some(s)) if !s.trim().is_empty() => assert!(result.is_ok()),
+                (1, _) => assert!(result.is_err()),
+                (2, Some(s)) if !s.trim().is_empty() => assert!(result.is_ok()),
+                (2, _) => assert!(result.is_err()),
+                _ => unreachable!("standard_kind clamped to 0..3"),
             }
         },
     );

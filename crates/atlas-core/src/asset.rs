@@ -60,6 +60,10 @@ impl AssetInstance {
             (AssetStandard::Erc20, _) => Err(AssetError::MissingRequiredIdentifier(
                 "erc20 contract".to_string(),
             )),
+            (AssetStandard::Spl, Some(value)) if !value.trim().is_empty() => Ok(()),
+            (AssetStandard::Spl, _) => Err(AssetError::MissingRequiredIdentifier(
+                "spl mint".to_string(),
+            )),
         }
     }
 }
@@ -82,6 +86,7 @@ pub enum InstrumentKind {
 pub enum AssetStandard {
     Native,
     Erc20,
+    Spl,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -131,6 +136,46 @@ mod tests {
             instance.validate_shape().unwrap_err().to_string(),
             "missing required identifier: erc20 contract"
         );
+    }
+
+    #[test]
+    fn spl_instance_requires_mint() {
+        let instance = AssetInstance {
+            id: AssetInstanceId::from_str("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/spl:missing")
+                .unwrap(),
+            instrument_id: AssetInstrumentId::from_str("usdc.circle").unwrap(),
+            network: NetworkId::from_str("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp").unwrap(),
+            standard: AssetStandard::Spl,
+            decimals: 6,
+            contract: None,
+            capabilities: vec![AssetCapability::Balance],
+            metadata: AssetMetadata::default(),
+        };
+        assert_eq!(
+            instance.validate_shape().unwrap_err().to_string(),
+            "missing required identifier: spl mint"
+        );
+    }
+
+    #[test]
+    fn spl_instance_rejects_whitespace_only_mint() {
+        for mint in ["", " ", "\t", " \n "] {
+            let instance = AssetInstance {
+                id: AssetInstanceId::from_str("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/spl:test")
+                    .unwrap(),
+                instrument_id: AssetInstrumentId::from_str("test").unwrap(),
+                network: NetworkId::from_str("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp").unwrap(),
+                standard: AssetStandard::Spl,
+                decimals: 6,
+                contract: Some(mint.to_string()),
+                capabilities: vec![AssetCapability::Balance],
+                metadata: AssetMetadata::default(),
+            };
+            assert!(
+                instance.validate_shape().is_err(),
+                "whitespace-only mint {mint:?} must be rejected",
+            );
+        }
     }
 
     #[test]

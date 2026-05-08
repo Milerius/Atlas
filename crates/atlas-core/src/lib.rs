@@ -5,6 +5,7 @@ pub mod asset;
 pub mod chain;
 pub mod error;
 pub mod id;
+pub mod official;
 pub mod registry;
 pub mod service;
 pub mod signing;

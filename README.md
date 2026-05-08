@@ -95,7 +95,7 @@ The first scope is a strict blockchain core. Higher product layers (accounts, ca
 
 🔢 **Big-int raw amounts** — `RawAmount` wraps `num_bigint::BigInt` + decimal scale. No `f64`, no precision loss, no silent rounding. Negative values rejected at construction.
 
-🧩 **Split registries** — `chain_registry` (chains, networks, RPC defaults, native asset references) split from `asset_registry` (groups, instruments, instances, contracts, decimals).
+🧩 **Split registries** — `chain_registry` (chains, networks, RPC defaults, native asset references) split from `asset_registry` (groups, instruments, instances, contracts, decimals). Atlas ships an [official registry](registries/) covering Ethereum, Base, and Solana mainnet with native ETH/SOL plus Circle USDC across all three networks.
 
 🔐 **Provider-neutral signing** — one `SignerProvider` trait covers MPC, local keys, Privy, account abstraction. Signers may return a raw signature, a signed transaction, or a submitted transaction result.
 
@@ -111,7 +111,7 @@ The first scope is a strict blockchain core. Higher product layers (accounts, ca
 
 | Crate | Purpose | Tests |
 |---|---|---:|
-| [`atlas-core`](crates/atlas-core/) | Typed IDs, big-int amounts, chain/asset domain models, split registries with validation, provider-neutral signing trait, `ChainService` trait + `MockEvmService` | 47 |
+| [`atlas-core`](crates/atlas-core/) | Typed IDs, big-int amounts, chain/asset domain models, split registries with validation, provider-neutral signing trait, `ChainService` trait + `MockEvmService`, embedded official registry constants | 49 |
 | [`atlas-verify`](crates/atlas-verify/) | Bolero property tests + Kani proofs targeting atlas-core boundary invariants | 6 |
 | [`atlas-scenarios`](crates/atlas-scenarios/) | Cucumber BDD scenarios — product-level flows for asset resolution and end-to-end mock transfer | 7 |
 
@@ -245,7 +245,7 @@ Atlas does **not** currently provide:
 - **Real EVM execution** — `MockEvmService` is a boundary stub. RLP encoding, gas estimation, EIP-1559 dynamic fees, and a real RPC client are deferred.
 - **Real signers** — only `MockSigner` exists. Local-key, MPC, Privy, and ERC-4337 adapters are deferred.
 - **Address validation** — `AddressRef` is currently a typed string. EIP-55 / chain-aware format validation is deferred.
-- **Non-EVM chains** — Solana, Sui, UTXO families are designed for but not implemented.
+- **Non-EVM execution** — Solana data is in the [official registry](registries/) (chain entry, mainnet network, native SOL, Circle USDC SPL), but there's no real Solana `ChainService` yet. Sui and UTXO families are designed for but not in the registry yet.
 - **Token approvals / contract calls** — only transfer is modeled.
 - **Discovered tokens** — token list is static fixtures; dynamic discovery is deferred.
 - **Product layer** — accounts, cards, stocks, lending, staking, swaps, unified portfolio APIs are deliberately out of scope until the boundary stabilizes.
@@ -264,14 +264,17 @@ Early development. The full design specification lives in [`docs/superpowers/spe
 - Split chain + asset registry documents with cross-reference validation, version checking, duplicate-ID detection
 - Provider-neutral signing boundary (`SignerProvider` trait, `SigningRequest`, `SigningResponse` with raw-sig / signed-tx / submitted variants)
 - `ChainService` trait + `MockEvmService` smoke implementation
-- 47 tests, 99.73% line coverage, full CI (fmt/clippy/test/doc/deny/careful/coverage), nightly mutants
+- `AssetStandard::Spl` for SPL tokens; `Spl` shape validation requires a non-empty mint
+- Official registry shipped in-tree under [`registries/`](registries/) — Ethereum, Base, Solana mainnet with native ETH/SOL and Circle USDC across all three; embedded into `atlas-core` via `include_str!` in `atlas_core::official`
+- BDD scenarios (Cucumber, 7 in `atlas-scenarios`); Bolero properties (6) + Kani proof scaffold (3) in `atlas-verify`
+- Full CI (fmt/clippy/test/bdd/doc/wasm/deny/careful/coverage); nightly mutants + Kani + Bolero extended
 
 **Next:**
 - Real EVM `ChainService`: RLP encoding, EIP-1559 fee model, gas estimation, RPC client trait
-- Real `SignerProvider` impls: secp256k1 local key, MPC adapter, Privy adapter, ERC-4337 account abstraction
-- `AddressRef` validation — EIP-55 checksum, chain-aware format
+- Real Solana `ChainService` to match the new Solana registry entries
+- Real `SignerProvider` impls: secp256k1 local key, MPC adapter, Privy adapter, ERC-4337 account abstraction; ed25519 local key for Solana
+- `AddressRef` validation — EIP-55 checksum, chain-aware format (EVM hex vs base58 Solana pubkey)
 - CAIP-2 / CAIP-19 typed parsers for `NetworkId` and `AssetInstanceId`
-- Solana chain family (second family to pressure-test the boundary)
 - Token approval and generic contract-call intent
 - Dynamic token discovery (token-list adapter trait)
 - Product composition layer: accounts, swaps, unified portfolio (per [`docs/superpowers/specs/2026-05-08-atlas-product-accounts-composition-notes.md`](docs/superpowers/specs/2026-05-08-atlas-product-accounts-composition-notes.md))

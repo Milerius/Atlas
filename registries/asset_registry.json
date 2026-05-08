@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "assetGroups": [
+    {
+      "id": "eth",
+      "symbol": "ETH",
+      "name": "Ether"
+    },
+    {
+      "id": "usdc",
+      "symbol": "USDC",
+      "name": "USD Coin"
+    },
+    {
+      "id": "sol",
+      "symbol": "SOL",
+      "name": "Solana"
+    }
+  ],
+  "assetInstruments": [
+    {
+      "id": "eth.native",
+      "groupId": "eth",
+      "assetClass": "crypto",
+      "kind": "native_coin",
+      "symbol": "ETH",
+      "name": "Ether",
+      "decimals": 18,
+      "traits": ["fungible", "transferable", "gas_asset"]
+    },
+    {
+      "id": "usdc.circle",
+      "groupId": "usdc",
+      "assetClass": "crypto",
+      "kind": "fungible_token",
+      "symbol": "USDC",
+      "name": "USD Coin",
+      "decimals": 6,
+      "issuer": "circle",
+      "traits": ["fungible", "transferable"]
+    },
+    {
+      "id": "sol.native",
+      "groupId": "sol",
+      "assetClass": "crypto",
+      "kind": "native_coin",
+      "symbol": "SOL",
+      "name": "Solana",
+      "decimals": 9,
+      "traits": ["fungible", "transferable", "gas_asset"]
+    }
+  ],
+  "assetInstances": [
+    {
+      "id": "eip155:1/native:eth",
+      "instrumentId": "eth.native",
+      "network": "eip155:1",
+      "standard": "native",
+      "decimals": 18,
+      "capabilities": ["balance", "transfer", "pay_gas"]
+    },
+    {
+      "id": "eip155:8453/native:eth",
+      "instrumentId": "eth.native",
+      "network": "eip155:8453",
+      "standard": "native",
+      "decimals": 18,
+      "capabilities": ["balance", "transfer", "pay_gas"]
+    },
+    {
+      "id": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "instrumentId": "usdc.circle",
+      "network": "eip155:1",
+      "standard": "erc20",
+      "decimals": 6,
+      "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "capabilities": ["balance", "transfer", "approve"]
+    },
+    {
+      "id": "eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "instrumentId": "usdc.circle",
+      "network": "eip155:8453",
+      "standard": "erc20",
+      "decimals": 6,
+      "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "capabilities": ["balance", "transfer", "approve"]
+    },
+    {
+      "id": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/spl:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "instrumentId": "usdc.circle",
+      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "standard": "spl",
+      "decimals": 6,
+      "contract": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "capabilities": ["balance", "transfer"]
+    },
+    {
+      "id": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/native:sol",
+      "instrumentId": "sol.native",
+      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "standard": "native",
+      "decimals": 9,
+      "capabilities": ["balance", "transfer", "pay_gas"]
+    }
+  ]
+}
