@@ -4,6 +4,7 @@
 //! on the failure mode without parsing strings. No SDK-level path uses
 //! `Box<dyn Error>` or `anyhow` — those belong at application leaves.
 
+use crate::asset::AssetStandard;
 use crate::id::{AssetGroupId, AssetInstanceId, AssetInstrumentId, ChainId, NetworkId, SignerId};
 
 /// Errors raised by [`crate::registry::Registry`] construction and lookups.
@@ -85,6 +86,17 @@ pub enum ChainError {
     /// CAIP path isn't recognized by the service.
     #[error("unsupported asset instance: {0}")]
     UnsupportedAssetInstance(AssetInstanceId),
+    /// `Network.chain_id` was missing, empty, or non-numeric on a network
+    /// that requires it (currently EVM).
+    #[error("missing chain id on network: {0}")]
+    MissingChainId(NetworkId),
+    /// The asset's standard is supported by the registry but not by this
+    /// chain service (e.g. SPL passed to the EVM service).
+    #[error("asset standard {standard:?} not supported for instance {instance}")]
+    StandardNotSupported {
+        instance: AssetInstanceId,
+        standard: AssetStandard,
+    },
     /// Recipient address failed format validation for the target chain.
     #[error("invalid address: {0}")]
     InvalidAddress(String),
@@ -95,9 +107,16 @@ pub enum ChainError {
     /// produce a valid encoded transaction.
     #[error("transaction build failed: {0}")]
     TransactionBuildFailed(String),
-    /// The broadcast step failed (RPC error, network rejection, …).
+    /// Broadcast step failed for a chain-specific reason
+    /// (e.g. nonce too low, gas underpriced, transaction underpriced).
+    /// For RPC transport failures (timeout, network unreachable, malformed
+    /// response) prefer [`Self::Rpc`] — atlas-evm wraps `alloy` transport
+    /// errors there.
     #[error("broadcast failed: {0}")]
     BroadcastFailed(String),
+    /// RPC transport / provider error encountered by a chain service.
+    #[error("rpc error: {0}")]
+    Rpc(#[from] RpcError),
 }
 
 /// Errors raised by [`crate::signing::SignerProvider`] implementations.
