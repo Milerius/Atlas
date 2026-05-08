@@ -1,0 +1,18 @@
+[package]
+name = "atlas-verify"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+atlas-core = { path = "../atlas-core" }
+num-bigint.workspace = true
+
+[dev-dependencies]
+bolero.workspace = true
+serde_json.workspace = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
