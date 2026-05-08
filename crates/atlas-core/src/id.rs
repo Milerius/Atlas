@@ -97,4 +97,22 @@ mod tests {
         let id = AssetInstanceId::new("eip155:8453/native:eth").unwrap();
         assert_eq!(id.as_str(), "eip155:8453/native:eth");
     }
+
+    #[test]
+    fn id_rejects_whitespace_only() {
+        assert_eq!(Id::new("   ").unwrap_err(), IdError::Empty);
+    }
+
+    #[test]
+    fn id_from_str_round_trips() {
+        let id = Id::from_str("evm").unwrap();
+        assert_eq!(id.as_str(), "evm");
+        assert_eq!(format!("{id}"), "evm");
+    }
+
+    #[test]
+    fn typed_id_from_str_and_display() {
+        let id = NetworkId::from_str("eip155:1").unwrap();
+        assert_eq!(format!("{id}"), "eip155:1");
+    }
 }

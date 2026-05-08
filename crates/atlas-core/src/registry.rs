@@ -231,3 +231,307 @@ fn missing_asset_instance(id: &str) -> RegistryError {
             message: "asset instance lookup id must not be empty".to_string(),
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        asset::{
+            AssetCapability, AssetClass, AssetMetadata, AssetStandard, AssetTrait, InstrumentKind,
+        },
+        chain::{
+            AddressFormat, ChainCapability, ChainFamily, Curve, NetworkEnvironment,
+            NetworkFeatures, RpcConfig,
+        },
+        id::ChainId,
+    };
+    use std::str::FromStr;
+
+    fn evm_chain() -> Chain {
+        Chain {
+            id: ChainId::from_str("evm").unwrap(),
+            name: "EVM".to_string(),
+            family: ChainFamily::AccountBased,
+            address_format: AddressFormat::EvmAddress,
+            default_curve: Curve::Secp256k1,
+            supported_standards: vec!["native".to_string(), "erc20".to_string()],
+            capabilities: vec![ChainCapability::Transfer],
+        }
+    }
+
+    fn ethereum_network() -> Network {
+        Network {
+            id: NetworkId::from_str("eip155:1").unwrap(),
+            alias: Some("ethereum".to_string()),
+            chain_id: Some("1".to_string()),
+            chain: ChainId::from_str("evm").unwrap(),
+            name: "Ethereum".to_string(),
+            environment: NetworkEnvironment::Mainnet,
+            native_asset_instance_id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+            rpc: RpcConfig {
+                default_url: "https://rpc.example.com".to_string(),
+            },
+            explorers: vec![],
+            features: NetworkFeatures::default(),
+        }
+    }
+
+    fn eth_group() -> AssetGroup {
+        AssetGroup {
+            id: AssetGroupId::from_str("eth").unwrap(),
+            symbol: "ETH".to_string(),
+            name: "Ether".to_string(),
+            metadata: AssetMetadata::default(),
+        }
+    }
+
+    fn eth_native_instrument() -> AssetInstrument {
+        AssetInstrument {
+            id: AssetInstrumentId::from_str("eth.native").unwrap(),
+            group_id: AssetGroupId::from_str("eth").unwrap(),
+            asset_class: AssetClass::Crypto,
+            kind: InstrumentKind::NativeCoin,
+            symbol: "ETH".to_string(),
+            name: "Ether".to_string(),
+            decimals: 18,
+            issuer: None,
+            traits: vec![AssetTrait::Fungible, AssetTrait::GasAsset],
+            metadata: AssetMetadata::default(),
+        }
+    }
+
+    fn ethereum_native_eth() -> AssetInstance {
+        AssetInstance {
+            id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+            instrument_id: AssetInstrumentId::from_str("eth.native").unwrap(),
+            network: NetworkId::from_str("eip155:1").unwrap(),
+            standard: AssetStandard::Native,
+            decimals: 18,
+            contract: None,
+            capabilities: vec![AssetCapability::Balance, AssetCapability::Transfer],
+            metadata: AssetMetadata::default(),
+        }
+    }
+
+    fn valid_chain_doc() -> ChainRegistryDocument {
+        ChainRegistryDocument {
+            version: LATEST_REGISTRY_VERSION,
+            chains: vec![evm_chain()],
+            networks: vec![ethereum_network()],
+        }
+    }
+
+    fn valid_asset_doc() -> AssetRegistryDocument {
+        AssetRegistryDocument {
+            version: LATEST_REGISTRY_VERSION,
+            asset_groups: vec![eth_group()],
+            asset_instruments: vec![eth_native_instrument()],
+            asset_instances: vec![ethereum_native_eth()],
+        }
+    }
+
+    fn valid_registry() -> Registry {
+        Registry::from_documents(valid_chain_doc(), valid_asset_doc()).unwrap()
+    }
+
+    #[test]
+    fn rejects_unknown_chain_registry_version() {
+        let mut chain_doc = valid_chain_doc();
+        chain_doc.version = 99;
+        let err = Registry::from_documents(chain_doc, valid_asset_doc()).unwrap_err();
+        assert_eq!(err, RegistryError::UnsupportedVersion { version: 99 });
+    }
+
+    #[test]
+    fn rejects_unknown_asset_registry_version() {
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.version = 42;
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert_eq!(err, RegistryError::UnsupportedVersion { version: 42 });
+    }
+
+    #[test]
+    fn rejects_duplicate_chain_id() {
+        let mut chain_doc = valid_chain_doc();
+        chain_doc.chains.push(evm_chain());
+        let err = Registry::from_documents(chain_doc, valid_asset_doc()).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message == "duplicate chain id: evm"
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_network_id() {
+        let mut chain_doc = valid_chain_doc();
+        chain_doc.networks.push(ethereum_network());
+        let err = Registry::from_documents(chain_doc, valid_asset_doc()).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message == "duplicate network id: eip155:1"
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_asset_group_id() {
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.asset_groups.push(eth_group());
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message == "duplicate asset group id: eth"
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_asset_instrument_id() {
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.asset_instruments.push(eth_native_instrument());
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message == "duplicate asset instrument id: eth.native"
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_asset_instance_id() {
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.asset_instances.push(ethereum_native_eth());
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message == "duplicate asset instance id: eip155:1/native:eth"
+        ));
+    }
+
+    #[test]
+    fn rejects_network_referencing_missing_chain() {
+        let mut chain_doc = valid_chain_doc();
+        chain_doc.networks[0].chain = ChainId::from_str("solana").unwrap();
+        let err = Registry::from_documents(chain_doc, valid_asset_doc()).unwrap_err();
+        assert!(matches!(err, RegistryError::MissingChain(id) if id.as_str() == "solana"));
+    }
+
+    #[test]
+    fn rejects_instrument_referencing_missing_group() {
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.asset_instruments[0].group_id = AssetGroupId::from_str("ghost").unwrap();
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert!(matches!(err, RegistryError::MissingAssetGroup(id) if id.as_str() == "ghost"));
+    }
+
+    #[test]
+    fn rejects_instance_referencing_missing_instrument() {
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.asset_instances[0].instrument_id =
+            AssetInstrumentId::from_str("ghost.token").unwrap();
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::MissingAssetInstrument(id) if id.as_str() == "ghost.token")
+        );
+    }
+
+    #[test]
+    fn rejects_native_instance_belonging_to_other_network() {
+        // Add a second network whose native_asset_instance_id points at an
+        // instance belonging to the first network.
+        let mut chain_doc = valid_chain_doc();
+        chain_doc.networks.push(Network {
+            id: NetworkId::from_str("eip155:8453").unwrap(),
+            alias: None,
+            chain_id: None,
+            chain: ChainId::from_str("evm").unwrap(),
+            name: "Base".to_string(),
+            environment: NetworkEnvironment::Mainnet,
+            // points at the Ethereum-native instance we already have
+            native_asset_instance_id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+            rpc: RpcConfig {
+                default_url: "https://rpc.example.com".to_string(),
+            },
+            explorers: vec![],
+            features: NetworkFeatures::default(),
+        });
+        let err = Registry::from_documents(chain_doc, valid_asset_doc()).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message.contains("belongs to another network")
+        ));
+    }
+
+    #[test]
+    fn rejects_network_with_unknown_native_instance() {
+        let mut chain_doc = valid_chain_doc();
+        chain_doc.networks[0].native_asset_instance_id =
+            AssetInstanceId::from_str("eip155:1/native:ghost").unwrap();
+        let err = Registry::from_documents(chain_doc, valid_asset_doc()).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::MissingAssetInstance(id) if id.as_str() == "eip155:1/native:ghost")
+        );
+    }
+
+    #[test]
+    fn lookup_misses_return_typed_errors() {
+        let registry = valid_registry();
+        assert!(matches!(
+            registry.network("eip155:999").unwrap_err(),
+            RegistryError::MissingNetwork(_)
+        ));
+        assert!(matches!(
+            registry.asset_group("ghost").unwrap_err(),
+            RegistryError::MissingAssetGroup(_)
+        ));
+        assert!(matches!(
+            registry.asset_instrument("ghost.token").unwrap_err(),
+            RegistryError::MissingAssetInstrument(_)
+        ));
+        assert!(matches!(
+            registry
+                .asset_instance("eip155:1/native:ghost")
+                .unwrap_err(),
+            RegistryError::MissingAssetInstance(_)
+        ));
+    }
+
+    #[test]
+    fn lookup_with_empty_id_reports_invalid_reference() {
+        let registry = valid_registry();
+        for err in [
+            registry.network("").unwrap_err(),
+            registry.asset_group("").unwrap_err(),
+            registry.asset_instrument("").unwrap_err(),
+            registry.asset_instance("").unwrap_err(),
+        ] {
+            assert!(matches!(err, RegistryError::InvalidReference { .. }));
+        }
+    }
+
+    #[test]
+    fn asset_instances_for_group_rejects_unknown_group() {
+        let registry = valid_registry();
+        assert!(matches!(
+            registry.asset_instances_for_group("ghost").unwrap_err(),
+            RegistryError::MissingAssetGroup(_)
+        ));
+    }
+
+    #[test]
+    fn asset_instances_for_group_returns_matching_instances() {
+        let registry = valid_registry();
+        let instances = registry.asset_instances_for_group("eth").unwrap();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].id.as_str(), "eip155:1/native:eth");
+    }
+
+    #[test]
+    fn instance_with_invalid_shape_is_rejected() {
+        // Native asset with a contract — shape validation must reject it.
+        let mut asset_doc = valid_asset_doc();
+        asset_doc.asset_instances[0].contract = Some("0xabc".to_string());
+        let err = Registry::from_documents(valid_chain_doc(), asset_doc).unwrap_err();
+        assert!(matches!(
+            err,
+            RegistryError::InvalidReference { ref message } if message.contains("shape invalid")
+        ));
+    }
+}

@@ -83,4 +83,19 @@ mod tests {
             AmountError::NegativeValue,
         );
     }
+
+    #[test]
+    fn checked_add_sums_matching_decimals() {
+        let a = RawAmount::new(BigInt::from(2u64), 6).unwrap();
+        let b = RawAmount::new(BigInt::from(3u64), 6).unwrap();
+        let sum = a.checked_add(&b).unwrap();
+        assert_eq!(sum.value().to_string(), "5");
+        assert_eq!(sum.decimals(), 6);
+    }
+
+    #[test]
+    fn raw_amount_accepts_zero() {
+        let amount = RawAmount::new(BigInt::from(0u64), 18).unwrap();
+        assert_eq!(amount.value().to_string(), "0");
+    }
 }

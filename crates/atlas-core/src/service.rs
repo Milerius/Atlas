@@ -115,7 +115,7 @@ mod tests {
         amount::RawAmount,
         id::{AccountRef, AddressRef, AssetInstanceId, NetworkId, SignerId},
         signing::{MockSigner, SignerProvider},
-        transaction::TransferIntent,
+        transaction::{SignedTransaction, TransferIntent, UnsignedTransaction},
     };
     use num_bigint::BigInt;
     use std::str::FromStr;
@@ -168,5 +168,61 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
+    }
+
+    fn unsigned_for_base() -> UnsignedTransaction {
+        UnsignedTransaction {
+            account: AccountRef::from_str("account-1").unwrap(),
+            network: NetworkId::from_str("eip155:8453").unwrap(),
+            intent: TransferIntent {
+                asset_instance_id: AssetInstanceId::from_str("eip155:8453/native:eth").unwrap(),
+                to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+                amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+            },
+            payload: b"mock-unsigned-evm-transaction".to_vec(),
+        }
+    }
+
+    #[test]
+    fn assemble_signed_transaction_passes_through_signed_transaction_variant() {
+        let service = MockEvmService;
+        let unsigned = unsigned_for_base();
+        let signed = service
+            .assemble_signed_transaction(
+                unsigned,
+                SigningResponse::SignedTransaction {
+                    signer: SignerId::from_str("mock").unwrap(),
+                    raw: b"raw-tx".to_vec(),
+                },
+            )
+            .unwrap();
+        assert_eq!(signed.raw, b"raw-tx");
+    }
+
+    #[test]
+    fn assemble_signed_transaction_rejects_submitted_transaction() {
+        let service = MockEvmService;
+        let unsigned = unsigned_for_base();
+        let err = service
+            .assemble_signed_transaction(
+                unsigned,
+                SigningResponse::SubmittedTransaction {
+                    signer: SignerId::from_str("mock").unwrap(),
+                    tx_hash: "0xabc".to_string(),
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(err, ChainError::TransactionBuildFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn broadcast_rejects_empty_signed_transaction() {
+        let service = MockEvmService;
+        let signed = SignedTransaction {
+            network: NetworkId::from_str("eip155:8453").unwrap(),
+            raw: vec![],
+        };
+        let err = service.broadcast(signed).await.unwrap_err();
+        assert!(matches!(err, ChainError::BroadcastFailed(_)));
     }
 }
