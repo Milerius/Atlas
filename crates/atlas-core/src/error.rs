@@ -29,7 +29,7 @@ pub enum AssetError {
     #[error("missing required identifier: {0}")]
     MissingRequiredIdentifier(String),
     #[error("asset is not executable: {0}")]
-    AssetNotExecutable(String),
+    AssetNotExecutable(AssetGroupId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

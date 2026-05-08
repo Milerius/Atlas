@@ -1847,15 +1847,15 @@ async fn base_usdc_transfer_smoke_flow_uses_exact_asset_instance() {
     let service = MockEvmService;
     let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
     let intent = TransferIntent {
-        asset_instance_id: AssetInstanceId::from_str(asset.id.as_str()).unwrap(),
-        to: "0x0000000000000000000000000000000000000001".to_string(),
-        amount: RawAmount::new(BigInt::from(100_000_000u64), asset.decimals),
+        asset_instance_id: asset.id.clone(),
+        to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+        amount: RawAmount::new(BigInt::from(100_000_000u64), asset.decimals).unwrap(),
     };
 
     let unsigned = service
         .prepare_transfer(
             AccountRef::from_str("account-1").unwrap(),
-            NetworkId::from_str(network.id.as_str()).unwrap(),
+            network.id.clone(),
             intent,
         )
         .await

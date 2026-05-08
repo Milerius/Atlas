@@ -78,6 +78,7 @@ typed_id!(AssetInstrumentId);
 typed_id!(AssetInstanceId);
 typed_id!(SignerId);
 typed_id!(AccountRef);
+typed_id!(AddressRef);
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,4 @@
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -8,8 +8,11 @@ pub struct RawAmount {
 }
 
 impl RawAmount {
-    pub fn new(value: BigInt, decimals: u8) -> Self {
-        Self { value, decimals }
+    pub fn new(value: BigInt, decimals: u8) -> Result<Self, AmountError> {
+        if value.sign() == Sign::Minus {
+            return Err(AmountError::NegativeValue);
+        }
+        Ok(Self { value, decimals })
     }
 
     pub fn value(&self) -> &BigInt {
@@ -27,7 +30,12 @@ impl RawAmount {
                 right: rhs.decimals,
             });
         }
-        Ok(Self::new(&self.value + &rhs.value, self.decimals))
+        // Sum of two non-negative values is non-negative; bypass the
+        // sign check to avoid the unreachable error path.
+        Ok(Self {
+            value: &self.value + &rhs.value,
+            decimals: self.decimals,
+        })
     }
 }
 
@@ -35,6 +43,8 @@ impl RawAmount {
 pub enum AmountError {
     #[error("amount decimals mismatch: left={left} right={right}")]
     DecimalsMismatch { left: u8, right: u8 },
+    #[error("amount value must be non-negative")]
+    NegativeValue,
 }
 
 #[cfg(test)]
@@ -47,7 +57,8 @@ mod tests {
         let amount = RawAmount::new(
             BigInt::parse_bytes(b"1000000000000000000000000000000", 10).unwrap(),
             18,
-        );
+        )
+        .unwrap();
         assert_eq!(amount.decimals(), 18);
         assert_eq!(
             amount.value().to_string(),
@@ -57,11 +68,19 @@ mod tests {
 
     #[test]
     fn checked_add_rejects_decimal_mismatch() {
-        let a = RawAmount::new(BigInt::from(1), 6);
-        let b = RawAmount::new(BigInt::from(1), 18);
+        let a = RawAmount::new(BigInt::from(1), 6).unwrap();
+        let b = RawAmount::new(BigInt::from(1), 18).unwrap();
         assert_eq!(
             a.checked_add(&b).unwrap_err().to_string(),
             "amount decimals mismatch: left=6 right=18"
+        );
+    }
+
+    #[test]
+    fn raw_amount_rejects_negative_value() {
+        assert_eq!(
+            RawAmount::new(BigInt::from(-1), 18).unwrap_err(),
+            AmountError::NegativeValue,
         );
     }
 }

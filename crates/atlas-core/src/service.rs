@@ -39,10 +39,11 @@ impl ChainService for MockEvmService {
         network: NetworkId,
         intent: TransferIntent,
     ) -> Result<UnsignedTransaction, ChainError> {
+        let expected_prefix = format!("{}/", network.as_str());
         if !intent
             .asset_instance_id
             .as_str()
-            .starts_with(network.as_str())
+            .starts_with(&expected_prefix)
         {
             return Err(ChainError::UnsupportedAssetInstance(
                 intent.asset_instance_id,
@@ -112,7 +113,7 @@ mod tests {
     use super::*;
     use crate::{
         amount::RawAmount,
-        id::{AccountRef, AssetInstanceId, NetworkId, SignerId},
+        id::{AccountRef, AddressRef, AssetInstanceId, NetworkId, SignerId},
         signing::{MockSigner, SignerProvider},
         transaction::TransferIntent,
     };
@@ -125,8 +126,8 @@ mod tests {
         let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
         let intent = TransferIntent {
             asset_instance_id: AssetInstanceId::from_str("eip155:8453/erc20:0x8335").unwrap(),
-            to: "0x0000000000000000000000000000000000000001".to_string(),
-            amount: RawAmount::new(BigInt::from(100_000_000u64), 6),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+            amount: RawAmount::new(BigInt::from(100_000_000u64), 6).unwrap(),
         };
 
         let unsigned = service
@@ -145,5 +146,27 @@ mod tests {
         let broadcast = service.broadcast(signed).await.unwrap();
 
         assert_eq!(broadcast.tx_hash, "0xmock");
+    }
+
+    // Regression: a network id like "eip155:1" must not match an asset
+    // instance whose CAIP path begins with "eip155:10/...". The separator
+    // '/' must immediately follow the network id.
+    #[tokio::test]
+    async fn prepare_transfer_rejects_partial_network_prefix_match() {
+        let service = MockEvmService;
+        let intent = TransferIntent {
+            asset_instance_id: AssetInstanceId::from_str("eip155:10/native:eth").unwrap(),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+        };
+        let err = service
+            .prepare_transfer(
+                AccountRef::from_str("account-1").unwrap(),
+                NetworkId::from_str("eip155:1").unwrap(),
+                intent,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
     }
 }

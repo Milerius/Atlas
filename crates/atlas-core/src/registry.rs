@@ -44,31 +44,20 @@ impl Registry {
         reject_unknown_version(chain_doc.version)?;
         reject_unknown_version(asset_doc.version)?;
 
-        let chains = chain_doc
-            .chains
-            .into_iter()
-            .map(|chain| (chain.id.to_string(), chain))
-            .collect::<BTreeMap<_, _>>();
-        let networks = chain_doc
-            .networks
-            .into_iter()
-            .map(|network| (network.id.to_string(), network))
-            .collect::<BTreeMap<_, _>>();
-        let asset_groups = asset_doc
-            .asset_groups
-            .into_iter()
-            .map(|group| (group.id.to_string(), group))
-            .collect::<BTreeMap<_, _>>();
-        let asset_instruments = asset_doc
-            .asset_instruments
-            .into_iter()
-            .map(|instrument| (instrument.id.to_string(), instrument))
-            .collect::<BTreeMap<_, _>>();
-        let asset_instances = asset_doc
-            .asset_instances
-            .into_iter()
-            .map(|instance| (instance.id.to_string(), instance))
-            .collect::<BTreeMap<_, _>>();
+        let chains = collect_unique(chain_doc.chains, |c| c.id.to_string(), "chain")?;
+        let networks = collect_unique(chain_doc.networks, |n| n.id.to_string(), "network")?;
+        let asset_groups =
+            collect_unique(asset_doc.asset_groups, |g| g.id.to_string(), "asset group")?;
+        let asset_instruments = collect_unique(
+            asset_doc.asset_instruments,
+            |i| i.id.to_string(),
+            "asset instrument",
+        )?;
+        let asset_instances = collect_unique(
+            asset_doc.asset_instances,
+            |i| i.id.to_string(),
+            "asset instance",
+        )?;
 
         let registry = Self {
             chains,
@@ -181,6 +170,26 @@ impl Registry {
 
         Ok(())
     }
+}
+
+fn collect_unique<T, F>(
+    items: Vec<T>,
+    key_fn: F,
+    kind: &'static str,
+) -> Result<BTreeMap<String, T>, RegistryError>
+where
+    F: Fn(&T) -> String,
+{
+    let mut map = BTreeMap::new();
+    for item in items {
+        let key = key_fn(&item);
+        if map.insert(key.clone(), item).is_some() {
+            return Err(RegistryError::InvalidReference {
+                message: format!("duplicate {kind} id: {key}"),
+            });
+        }
+    }
+    Ok(map)
 }
 
 fn reject_unknown_version(version: u32) -> Result<(), RegistryError> {

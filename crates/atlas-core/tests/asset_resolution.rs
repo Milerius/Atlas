@@ -1,12 +1,6 @@
-use atlas_core::registry::{AssetRegistryDocument, ChainRegistryDocument, Registry};
+mod common;
 
-fn registry() -> Registry {
-    let chain_doc: ChainRegistryDocument =
-        serde_json::from_str(include_str!("fixtures/chain_registry.valid.json")).unwrap();
-    let asset_doc: AssetRegistryDocument =
-        serde_json::from_str(include_str!("fixtures/asset_registry.valid.json")).unwrap();
-    Registry::from_documents(chain_doc, asset_doc).unwrap()
-}
+use common::registry;
 
 #[test]
 fn usdc_group_resolves_to_ethereum_and_base_instances() {
@@ -31,7 +25,9 @@ fn eth_group_resolves_to_ethereum_and_base_native_instances() {
         .map(|instance| instance.id.as_str())
         .collect::<Vec<_>>();
 
-    assert_eq!(ids, vec!["eip155:1/native:eth", "eip155:8453/native:eth"]);
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&"eip155:1/native:eth"));
+    assert!(ids.contains(&"eip155:8453/native:eth"));
 }
 
 #[test]

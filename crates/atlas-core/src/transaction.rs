@@ -1,6 +1,6 @@
 use crate::{
     amount::RawAmount,
-    id::{AccountRef, AssetInstanceId, NetworkId},
+    id::{AccountRef, AddressRef, AssetInstanceId, NetworkId},
 };
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct TransferIntent {
     #[serde(rename = "assetInstanceId")]
     pub asset_instance_id: AssetInstanceId,
-    pub to: String,
+    pub to: AddressRef,
     pub amount: RawAmount,
 }
 

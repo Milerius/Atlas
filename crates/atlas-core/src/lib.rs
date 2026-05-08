@@ -10,5 +10,5 @@ pub mod service;
 pub mod signing;
 pub mod transaction;
 
-pub use amount::RawAmount;
+pub use amount::{AmountError, RawAmount};
 pub use error::{AssetError, ChainError, RegistryError, RpcError, SigningError};
