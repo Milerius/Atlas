@@ -115,8 +115,12 @@ jobs:
       # use async-trait macros (atlas-core does, via SignerProvider/ChainService).
       # Tracked upstream: https://github.com/llvm/llvm-project/issues/189169
       # Re-enable --branch once the LLVM fix lands in nightly Rust.
+      #
+      # atlas-scenarios is excluded: its src/ holds Cucumber World + step
+      # definitions (test infrastructure), not API surface. Coverage on the
+      # BDD harness isn't meaningful — the value is in scenarios passing.
       - name: Line coverage (codecov)
-        run: cargo +nightly llvm-cov --workspace --all-features --codecov --output-path codecov.json
+        run: cargo +nightly llvm-cov --workspace --all-features --ignore-filename-regex 'atlas-scenarios' --codecov --output-path codecov.json
       - uses: codecov/codecov-action@v6
         with:
           files: codecov.json

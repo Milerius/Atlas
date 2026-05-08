@@ -24,3 +24,8 @@ comment:
 
 github_checks:
   annotations: true
+
+ignore:
+  # BDD harness (Cucumber World + step definitions) is test infrastructure,
+  # not API surface. Mirror the CI llvm-cov filter so codecov agrees.
+  - "crates/atlas-scenarios/**"

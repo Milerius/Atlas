@@ -43,7 +43,7 @@ Atlas is the foundation underneath that. The boundary types — chains, networks
 | **Errors**                   | Typed enums per domain, no panics in SDK paths   | `Box<dyn Error>` / `anyhow` everywhere        |
 | **Validation**               | Registries rejected before exposure              | Trust fixtures, fail at runtime               |
 | **Modularity**               | Core ships primitives, adapters live separately  | "All-in-one" SDK forces vendor lock-in        |
-| **Verification rigor**       | 99.73% line coverage · `cargo deny` · `careful`  | Happy-path unit tests                         |
+| **Verification rigor**       | 99.88% line coverage · `cargo deny` · `careful`  | Happy-path unit tests                         |
 
 ---
 
@@ -101,7 +101,7 @@ The first scope is a strict blockchain core. Higher product layers (accounts, ca
 
 🚦 **Typed errors everywhere** — `RegistryError`, `AssetError`, `ChainError`, `SigningError`, `RpcError`, `AmountError` with named variants. No `Box<dyn Error>` in SDK paths.
 
-🧪 **Verification rigor** — unit + fixture + smoke + BDD scenarios, 99.73% line coverage, Bolero property tests, Kani proof scaffold, `cargo deny`, `cargo careful`, mutation testing nightly, `cargo doc -D warnings`, `wasm32-unknown-unknown` build check.
+🧪 **Verification rigor** — unit + fixture + smoke + BDD scenarios, 99.88% line coverage, Bolero property tests, Kani proof scaffold, `cargo deny`, `cargo careful`, mutation testing nightly, `cargo doc -D warnings`, `wasm32-unknown-unknown` build check.
 
 🚫 **No unsafe** — `#![forbid(unsafe_code)]` at the crate root.
 
@@ -194,7 +194,7 @@ let result   = service.broadcast(signed).await?;
 | 9    | `wasm32-unknown-unknown` build      | Every PR      | atlas-core stays WASM-compilable                                               |
 | 10   | `cargo deny`                        | Every PR      | License + advisory + dependency hygiene                                        |
 | 11   | `cargo careful`                     | Every PR      | Extra UB detection beyond standard tests                                       |
-| 12   | Coverage (`cargo llvm-cov`)         | Every PR      | Line coverage tracked via Codecov (currently 99.73%)                           |
+| 12   | Coverage (`cargo llvm-cov`)         | Every PR      | Line coverage tracked via Codecov (currently 99.88%, atlas-scenarios excluded) |
 | 13   | Mutation testing (`cargo-mutants`)  | Nightly       | Test-suite quality regression                                                  |
 | 14   | Full HTML coverage                  | Nightly       | Detailed line-level coverage artifact                                          |
 | 15   | Kani proofs (3 scaffold proofs)     | Nightly       | Bounded model checking for registry version invariants                         |
