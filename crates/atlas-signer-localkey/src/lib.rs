@@ -95,7 +95,7 @@ impl LocalKeySigner {
             .map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
         let seed = mnemonic.to_seed("");
         let xprv =
-            bip32::XPrv::new(&seed).map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
+            bip32::XPrv::new(seed).map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
         let path = DerivationPath::from_str(derivation_path)
             .map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
         let mut child = xprv;
