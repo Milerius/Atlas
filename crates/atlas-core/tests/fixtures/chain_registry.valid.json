@@ -8,7 +8,8 @@
       "addressFormat": "evm_address",
       "defaultCurve": "secp256k1",
       "supportedStandards": ["native", "erc20"],
-      "capabilities": ["balance", "transfer", "approve", "contract_call", "broadcast"]
+      "capabilities": ["balance", "transfer", "approve", "contract_call", "broadcast"],
+      "defaultDerivationPath": "m/44'/60'/0'/0/0"
     }
   ],
   "networks": [

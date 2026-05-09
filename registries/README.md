@@ -23,6 +23,7 @@ The JSON files are embedded into `atlas-core` at compile time via `include_str!`
 ## Schema notes
 
 - **`chainId`** is an EVM-specific decimal string (e.g. `"1"`, `"8453"`). It's optional on the [`Network`](../crates/atlas-core/src/chain.rs) struct and omitted entirely for non-EVM networks (Solana, future Sui / UTXO). Don't rely on it as a universal identifier — use `Network.id` (CAIP-2 form) when you need a stable cross-chain key.
+- **`defaultDerivationPath`** lives on `Chain` (not `Network`) and carries the canonical BIP-32 / SLIP-44 path for the family's first account: `"m/44'/60'/0'/0/0"` for EVM (coin type 60), `"m/44'/501'/0'/0'"` for Solana (coin type 501). HD signers (e.g. `LocalKeySigner::from_mnemonic`) read this when no explicit override is supplied, so the path lives in the registry rather than being hardcoded at every call site. Multi-account derivation (varying the account index) is the caller's responsibility for v1.
 
 ## Coverage
 
