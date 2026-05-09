@@ -201,6 +201,11 @@ fn bigint_to_u256(v: &BigInt) -> Result<U256, ChainError> {
 
 fn bigint_to_u128(v: &BigInt) -> Result<u128, ChainError> {
     use num_bigint::Sign;
+    // The codec is build-context: both negative inputs and overflow surface
+    // as `TransactionBuildFailed`. The estimator surfaces estimation-time
+    // failures through `FeeEstimationFailed`; by the time a value reaches
+    // this helper, it's already been accepted by the estimator and is being
+    // packed into a transaction.
     if v.sign() == Sign::Minus {
         return Err(ChainError::TransactionBuildFailed(
             "negative fee".to_string(),
@@ -208,7 +213,7 @@ fn bigint_to_u128(v: &BigInt) -> Result<u128, ChainError> {
     }
     let (_, bytes_be) = v.to_bytes_be();
     if bytes_be.len() > 16 {
-        return Err(ChainError::FeeEstimationFailed(
+        return Err(ChainError::TransactionBuildFailed(
             "fee value exceeds u128".to_string(),
         ));
     }

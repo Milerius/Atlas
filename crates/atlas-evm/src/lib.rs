@@ -3,7 +3,10 @@
 //! Implements all 5 traits from `atlas_core::service`:
 //! - [`codec::EvmCodec`] — pure RLP encoding (legacy + EIP-1559)
 //! - [`reader::EvmReader`] — RPC reads via `alloy-provider`
-//! - [`fee_estimator::EvmFeeEstimator`] — `eth_feeHistory` + OP-stack L1 oracle
+//! - [`fee_estimator::EvmFeeEstimator`] — `eth_feeHistory`-based EIP-1559
+//!   suggestion with a legacy `eth_gasPrice` fallback. OP-Stack L1 fee oracle
+//!   integration is deferred (the `EvmFee::Eip1559` variant always emits
+//!   `l1_fee_wei: None` for now).
 //! - [`broadcaster::EvmBroadcaster`] — `eth_sendRawTransaction`
 //! - [`service::EvmChainService`] — orchestrator
 //!

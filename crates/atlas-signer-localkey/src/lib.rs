@@ -110,8 +110,11 @@ impl LocalKeySigner {
     }
 
     /// EIP-55-checksummed Ethereum address derived from this key.
+    ///
+    /// Uses alloy's `Display` impl on `Address`, which emits the canonical
+    /// EIP-55 mixed-case checksum form (`{:x}` would emit lowercase only).
     pub fn address(&self) -> String {
-        format!("{:#x}", self.inner.address())
+        format!("{}", self.inner.address())
     }
 }
 

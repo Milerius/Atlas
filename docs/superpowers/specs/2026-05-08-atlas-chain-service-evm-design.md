@@ -49,7 +49,7 @@ boundary. Rolling our own RLP / signing math is a non-starter for time-to-real.
 
 Three crates touched by this PR:
 
-```
+```text
 atlas-core (refactor)
   ├── trait ChainCodec       (pure: encode / sign-request / assemble)
   ├── trait ChainReader      (RPC: balance, nonce, status)

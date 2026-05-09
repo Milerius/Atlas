@@ -151,7 +151,8 @@ use atlas_core::{
 };
 use atlas_evm::service::EvmChainService;
 use atlas_signer_localkey::LocalKeySigner;
-use alloy_provider::{Provider, RootProvider, network::Ethereum};
+use alloy_provider::{Provider, RootProvider};
+use alloy_network::Ethereum;
 use num_bigint::BigInt;
 use std::str::FromStr;
 
