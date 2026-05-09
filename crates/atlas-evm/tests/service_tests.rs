@@ -152,7 +152,7 @@ async fn transfer_erc20_happy_path_broadcasts_tx_hash() {
 }
 
 #[tokio::test]
-async fn transfer_invalid_account_returns_build_failed() {
+async fn transfer_invalid_account_returns_invalid_address() {
     let asserter = Asserter::new();
     let provider = ProviderBuilder::new()
         .disable_recommended_fillers()

@@ -108,6 +108,58 @@ fn assemble_signed_round_trip_recovers_sender_for_eip1559() {
 }
 
 #[test]
+fn assemble_signed_round_trip_recovers_sender_for_legacy() {
+    let codec = EvmCodec;
+    let key_bytes: [u8; 32] = [
+        0x4c, 0x0d, 0xa3, 0xc7, 0xe6, 0x09, 0xa1, 0x6e, 0x42, 0x06, 0x4e, 0x9c, 0x16, 0x1c, 0x32,
+        0x06, 0x16, 0x9c, 0x32, 0x06, 0x9c, 0x32, 0x06, 0x9c, 0x32, 0x06, 0x9c, 0x32, 0x06, 0x9c,
+        0x32, 0x06,
+    ];
+    let signer = PrivateKeySigner::from_bytes(&key_bytes.into()).unwrap();
+    let expected_sender: Address = signer.address();
+
+    let ctx = EvmPrepareContext {
+        account: AccountRef::from_str("account-1").unwrap(),
+        network: NetworkId::from_str("eip155:1").unwrap(),
+        intent: TransferIntent {
+            asset_instance_id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000002").unwrap(),
+            amount: RawAmount::new(BigInt::from(1_000u64), 18).unwrap(),
+        },
+        chain_id: 1,
+        nonce: 0,
+        fee: EvmFee::Legacy {
+            gas_price: BigInt::from(20_000_000_000u64),
+            gas_limit: 21_000,
+        },
+        standard: AssetStandard::Native,
+        contract: None,
+    };
+
+    let unsigned = codec.prepare_transfer(ctx).unwrap();
+    let request = codec.signing_request(&unsigned).unwrap();
+
+    let digest = alloy_primitives::B256::from_slice(&request.payload);
+    let signature = signer.sign_hash_sync(&digest).unwrap();
+    let mut sig_bytes = Vec::with_capacity(65);
+    sig_bytes.extend_from_slice(&signature.r().to_be_bytes::<32>());
+    sig_bytes.extend_from_slice(&signature.s().to_be_bytes::<32>());
+    sig_bytes.push(if signature.v() { 1 } else { 0 });
+
+    let response = SigningResponse::SignatureOnly {
+        signer: SignerId::from_str("test").unwrap(),
+        signature: sig_bytes,
+        public_key: vec![],
+    };
+
+    let signed = codec.assemble_signed(unsigned, response).unwrap();
+
+    let envelope: TxEnvelope = TxEnvelope::decode_2718(&mut &signed.raw[..]).unwrap();
+    let recovered = envelope.recover_signer().unwrap();
+    assert_eq!(recovered, expected_sender);
+}
+
+#[test]
 fn assemble_signed_passes_through_signed_transaction_variant() {
     let codec = EvmCodec;
     let ctx = EvmPrepareContext {
