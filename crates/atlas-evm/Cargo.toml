@@ -24,4 +24,5 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 [dev-dependencies]
 alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-signer-local = { workspace = true, features = ["mnemonic", "keystore"] }
+atlas-signer-localkey = { path = "../atlas-signer-localkey" }
 serde_json.workspace = true

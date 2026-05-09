@@ -885,6 +885,7 @@ dependencies = [
  "alloy-signer-local",
  "async-trait",
  "atlas-core",
+ "atlas-signer-localkey",
  "num-bigint",
  "serde",
  "serde_json",
