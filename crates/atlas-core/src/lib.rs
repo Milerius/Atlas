@@ -20,10 +20,13 @@
 //!   submitted transaction result.
 //! - **Per-chain fee shapes** ([`fee`]) — `Fee` envelope, `EvmFee` variants,
 //!   and `TransactionStatus` for `ChainReader` returns.
-//! - **Per-chain-family execution** ([`service`]) — `ChainService` trait with
-//!   a `MockEvmService` smoke implementation. Chain services accept only
-//!   concrete `AssetInstance`s; `AssetGroup` and `AssetInstrument` are for
-//!   display, search, pricing, and routing.
+//! - **Per-chain-family execution** ([`service`]) — five focused traits
+//!   ([`service::ChainCodec`], [`service::ChainReader`],
+//!   [`service::FeeEstimator`], [`service::ChainBroadcaster`],
+//!   [`service::ChainService`]) plus a
+//!   [`service::MockEvmChainService`] smoke implementation. Chain services
+//!   accept only concrete `AssetInstance`s; `AssetGroup` and
+//!   `AssetInstrument` are for display, search, pricing, and routing.
 //! - **Transaction lifecycle types** ([`transaction`]) — `TransferIntent`,
 //!   `UnsignedTransaction`, `SignedTransaction`, `BroadcastResult`.
 //! - **Embedded official registry** ([`official`]) — Atlas's curated chain

@@ -2,7 +2,7 @@
 //!
 //! [`Fee`] is the chain-agnostic top-level enum used by higher product layers
 //! that aggregate fees across networks. Each chain family's
-//! `crate::service::FeeEstimator::Fee` associated type points at the
+//! [`crate::service::FeeEstimator::Fee`] associated type points at the
 //! appropriate sibling enum (e.g. [`EvmFee`]).
 
 use num_bigint::BigInt;
@@ -69,7 +69,7 @@ impl EvmFee {
 }
 
 /// Lifecycle of a broadcast transaction. Returned by
-/// `crate::service::ChainReader::get_transaction_status`.
+/// [`crate::service::ChainReader::get_transaction_status`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum TransactionStatus {

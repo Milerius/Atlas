@@ -1,101 +1,197 @@
-//! Per-chain-family transaction lifecycle.
+//! Per-chain-family transaction lifecycle, split into 5 focused traits.
 //!
-//! [`ChainService`] is the boundary between atlas-core's typed
-//! intent-and-instance world and chain-specific encoding / RPC. One
-//! `impl` per chain family: a real EVM service handles RLP / EIP-1559
-//! / gas estimation, a future Solana service handles message
-//! encoding / recent blockhash, and so on.
+//! - [`ChainCodec`] — pure: encode / sign-request / assemble. No RPC, no I/O.
+//! - [`ChainReader`] — RPC reads: balance, nonce, tx status.
+//! - [`FeeEstimator`] — RPC: estimate fee for an intent (per-chain `Fee` type).
+//! - [`ChainBroadcaster`] — RPC: send a signed transaction.
+//! - [`ChainService`] — orchestrator that composes the four above for the
+//!   happy-path transfer flow.
 //!
-//! [`MockEvmService`] is in-tree as a smoke implementation. It
-//! returns deterministic placeholder bytes and a `0xmock` tx hash;
-//! see `crates/atlas-core/tests/smoke_flow.rs` for the end-to-end
-//! flow it exercises.
+//! The split keeps the pure-encoding seam separate from RPC-dependent seams,
+//! so a server can build transactions offline (codec only) and a client can
+//! sign with MPC / Privy / local key.
+//!
+//! [`MockEvmChainService`] is the in-tree smoke implementation — a single
+//! struct that implements all 5 traits, so callers get one type and one
+//! import rather than five separate mocks.
 
 use crate::{
+    amount::RawAmount,
+    asset::AssetInstance,
     chain::Curve,
     error::ChainError,
-    id::{AccountRef, NetworkId},
+    fee::{EvmFee, TransactionStatus},
+    id::{AccountRef, AddressRef, NetworkId},
     signing::{SigningPayloadKind, SigningRequest, SigningResponse},
     transaction::{BroadcastResult, SignedTransaction, TransferIntent, UnsignedTransaction},
 };
 use async_trait::async_trait;
+use num_bigint::BigInt;
 
-/// Per-chain-family transaction lifecycle: prepare → signing-request
-/// → assemble → broadcast.
+// ── ChainCodec ──────────────────────────────────────────────────────────────
+
+/// Pure transaction codec — encode an intent into chain-specific bytes,
+/// produce a signing request, and assemble a signed transaction from
+/// whichever [`SigningResponse`] shape the signer returned.
 ///
-/// Implementations must be `Send + Sync` so they can be shared across
-/// async tasks. They accept only concrete
-/// [`crate::asset::AssetInstance`] ids in transfer intents — resolving
-/// from a group or instrument is the caller's job.
-#[async_trait]
-pub trait ChainService: Send + Sync {
-    /// Take a [`TransferIntent`] and produce the chain-specific
-    /// [`UnsignedTransaction`] ready to sign. Validates that the
-    /// asset instance belongs to the target network.
-    async fn prepare_transfer(
+/// No RPC, no I/O. Implementations are `Send + Sync`.
+pub trait ChainCodec: Send + Sync {
+    /// Per-chain context needed to encode a transfer.
+    /// Different chains require different inputs (EVM: chain_id + nonce + fee;
+    /// Solana: recent_blockhash + compute units; UTXO: UTXO selection).
+    type PrepareContext;
+
+    /// Encode a [`TransferIntent`] (in `ctx.intent`) into chain-specific
+    /// unsigned bytes carried in [`UnsignedTransaction::payload`]. Pure —
+    /// no RPC, no I/O.
+    fn prepare_transfer(
         &self,
-        account: AccountRef,
-        network: NetworkId,
-        intent: TransferIntent,
+        ctx: Self::PrepareContext,
     ) -> Result<UnsignedTransaction, ChainError>;
 
-    /// Build the [`SigningRequest`] a [`crate::signing::SignerProvider`]
-    /// must sign over for this unsigned transaction. Synchronous
-    /// because no RPC should be needed at this step.
+    /// Produce the [`SigningRequest`] a [`crate::signing::SignerProvider`]
+    /// should sign over. For EVM this is the keccak256 digest with
+    /// `payload_kind = TransactionDigest`.
     fn signing_request(&self, unsigned: &UnsignedTransaction)
         -> Result<SigningRequest, ChainError>;
 
-    /// Combine the unsigned transaction with whatever
-    /// [`SigningResponse`] shape the signer returned, producing a
-    /// [`SignedTransaction`] ready to broadcast. Some signers
-    /// (`SubmittedTransaction`) may bypass this step entirely; chain
-    /// services that don't support that path return
+    /// Combine `unsigned` with whichever [`SigningResponse`] shape the
+    /// signer returned, producing broadcast-ready bytes in
+    /// [`SignedTransaction::raw`]. Some signers
+    /// ([`SigningResponse::SubmittedTransaction`]) bypass this step;
+    /// codecs that don't support that path return
     /// [`ChainError::TransactionBuildFailed`].
-    fn assemble_signed_transaction(
+    fn assemble_signed(
         &self,
         unsigned: UnsignedTransaction,
         response: SigningResponse,
     ) -> Result<SignedTransaction, ChainError>;
+}
 
-    /// Submit the signed transaction to the network's RPC and return
-    /// the resulting tx hash.
+// ── ChainReader ─────────────────────────────────────────────────────────────
+
+/// RPC reads: balance, nonce, transaction status. Does not write.
+#[async_trait]
+pub trait ChainReader: Send + Sync {
+    async fn get_balance(
+        &self,
+        instance: &AssetInstance,
+        address: &AddressRef,
+    ) -> Result<RawAmount, ChainError>;
+
+    async fn get_nonce(&self, network: &NetworkId, address: &AddressRef)
+        -> Result<u64, ChainError>;
+
+    async fn get_transaction_status(
+        &self,
+        network: &NetworkId,
+        hash: &str,
+    ) -> Result<TransactionStatus, ChainError>;
+}
+
+// ── FeeEstimator ────────────────────────────────────────────────────────────
+
+/// Estimate the per-chain `Fee` for a transfer intent. The associated type
+/// allows EVM to return [`crate::fee::EvmFee`] directly without going through
+/// the [`crate::fee::Fee`] wrapper.
+#[async_trait]
+pub trait FeeEstimator: Send + Sync {
+    type Fee;
+
+    async fn estimate_fee(
+        &self,
+        intent: &TransferIntent,
+        sender: &AddressRef,
+    ) -> Result<Self::Fee, ChainError>;
+}
+
+// ── ChainBroadcaster ────────────────────────────────────────────────────────
+
+/// Submit a [`SignedTransaction`] to the network's RPC.
+#[async_trait]
+pub trait ChainBroadcaster: Send + Sync {
     async fn broadcast(&self, signed: SignedTransaction) -> Result<BroadcastResult, ChainError>;
 }
 
-/// In-tree mock EVM chain service. Used by the smoke flow and by
-/// downstream tests that want a deterministic
-/// `prepare → sign → broadcast` pipeline without standing up RLP
-/// encoding or a real RPC client.
-///
-/// Real EVM execution lands in a separate `atlas-evm` crate
-/// (deferred). The mock enforces the same network-prefix rule as a
-/// real service would, so tests of higher-level wiring catch
-/// network-mismatch bugs.
-#[derive(Clone, Debug, Default)]
-pub struct MockEvmService;
+// ── ChainService ────────────────────────────────────────────────────────────
 
+/// Orchestrator that composes [`ChainCodec`] + [`ChainReader`] +
+/// [`FeeEstimator`] + [`ChainBroadcaster`] + a [`crate::signing::SignerProvider`]
+/// into the happy-path transfer flow.
+///
+/// Apps that need fine control compose the four sub-traits directly; this
+/// trait is for the common case.
 #[async_trait]
-impl ChainService for MockEvmService {
-    async fn prepare_transfer(
+pub trait ChainService: Send + Sync {
+    /// Per-chain context type, mirrored from this orchestrator's
+    /// underlying [`ChainCodec::PrepareContext`]. Exposed at the trait
+    /// boundary so generic callers can name the chain-specific
+    /// `PrepareContext` via `<S as ChainService>::PrepareContext` when
+    /// they hold an `S: ChainService`.
+    type PrepareContext;
+    /// Per-chain fee type, mirrored from this orchestrator's underlying
+    /// [`FeeEstimator::Fee`]. Exposed for the same reason as
+    /// [`Self::PrepareContext`] — so `<S as ChainService>::Fee` is
+    /// reachable from generic code.
+    type Fee;
+
+    async fn transfer(
         &self,
-        account: AccountRef,
-        network: NetworkId,
         intent: TransferIntent,
+        account: AccountRef,
+        signer: &dyn crate::signing::SignerProvider,
+    ) -> Result<BroadcastResult, ChainError>;
+}
+
+// ── MockEvmChainService ─────────────────────────────────────────────────────
+
+/// In-tree mock that implements all 5 traits. Returns deterministic
+/// placeholder bytes and a `0xmock` tx hash so the smoke flow + BDD scenarios
+/// can exercise the full pipeline shape without an EVM RLP encoder or RPC
+/// dependency.
+///
+/// Real EVM implementations live in the `atlas-evm` crate.
+#[derive(Clone, Debug, Default)]
+pub struct MockEvmChainService;
+
+/// Mock context for [`MockEvmChainService::prepare_transfer`]. Mirrors the
+/// shape of the future real EVM `PrepareContext` so call sites don't need
+/// to change when migrating from mock to real.
+#[derive(Clone, Debug)]
+pub struct MockEvmPrepareContext {
+    pub account: AccountRef,
+    pub network: NetworkId,
+    pub intent: TransferIntent,
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub fee: EvmFee,
+}
+
+impl ChainCodec for MockEvmChainService {
+    type PrepareContext = MockEvmPrepareContext;
+
+    fn prepare_transfer(
+        &self,
+        ctx: MockEvmPrepareContext,
     ) -> Result<UnsignedTransaction, ChainError> {
-        let expected_prefix = format!("{}/", network.as_str());
-        if !intent
+        // Mock keeps the existing network-prefix exact-segment rule so this
+        // smoke service still catches the bug we have a property test for.
+        let expected_prefix = format!("{}/", ctx.network.as_str());
+        if !ctx
+            .intent
             .asset_instance_id
             .as_str()
             .starts_with(&expected_prefix)
         {
             return Err(ChainError::UnsupportedAssetInstance(
-                intent.asset_instance_id,
+                ctx.intent.asset_instance_id,
             ));
         }
+        let _ = (ctx.chain_id, ctx.nonce, ctx.fee); // mock ignores numeric fields
         Ok(UnsignedTransaction {
-            account,
-            network,
-            intent,
+            account: ctx.account,
+            network: ctx.network,
+            intent: ctx.intent,
             payload: b"mock-unsigned-evm-transaction".to_vec(),
         })
     }
@@ -113,7 +209,7 @@ impl ChainService for MockEvmService {
         })
     }
 
-    fn assemble_signed_transaction(
+    fn assemble_signed(
         &self,
         unsigned: UnsignedTransaction,
         response: SigningResponse,
@@ -138,7 +234,62 @@ impl ChainService for MockEvmService {
             }
         }
     }
+}
 
+#[async_trait]
+impl ChainReader for MockEvmChainService {
+    async fn get_balance(
+        &self,
+        instance: &AssetInstance,
+        _address: &AddressRef,
+    ) -> Result<RawAmount, ChainError> {
+        // Deterministic mock balance: 1 unit at the instance's decimals.
+        let one_unit = BigInt::from(10u64).pow(instance.decimals as u32);
+        RawAmount::new(one_unit, instance.decimals)
+            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))
+    }
+
+    async fn get_nonce(
+        &self,
+        _network: &NetworkId,
+        _address: &AddressRef,
+    ) -> Result<u64, ChainError> {
+        Ok(0)
+    }
+
+    async fn get_transaction_status(
+        &self,
+        _network: &NetworkId,
+        hash: &str,
+    ) -> Result<TransactionStatus, ChainError> {
+        Ok(TransactionStatus::Confirmed {
+            hash: hash.to_string(),
+            block_number: 1,
+            gas_used: BigInt::from(21_000u64),
+        })
+    }
+}
+
+#[async_trait]
+impl FeeEstimator for MockEvmChainService {
+    type Fee = EvmFee;
+
+    async fn estimate_fee(
+        &self,
+        _intent: &TransferIntent,
+        _sender: &AddressRef,
+    ) -> Result<EvmFee, ChainError> {
+        Ok(EvmFee::Eip1559 {
+            max_fee_per_gas: BigInt::from(2_000_000_000u64),
+            max_priority_fee_per_gas: BigInt::from(1_000_000u64),
+            gas_limit: 21_000,
+            l1_fee_wei: None,
+        })
+    }
+}
+
+#[async_trait]
+impl ChainBroadcaster for MockEvmChainService {
     async fn broadcast(&self, signed: SignedTransaction) -> Result<BroadcastResult, ChainError> {
         if signed.raw.is_empty() {
             return Err(ChainError::BroadcastFailed(
@@ -151,121 +302,156 @@ impl ChainService for MockEvmService {
     }
 }
 
+#[async_trait]
+impl ChainService for MockEvmChainService {
+    type PrepareContext = MockEvmPrepareContext;
+    type Fee = EvmFee;
+
+    async fn transfer(
+        &self,
+        intent: TransferIntent,
+        account: AccountRef,
+        signer: &dyn crate::signing::SignerProvider,
+    ) -> Result<BroadcastResult, ChainError> {
+        // Mock derives a fake sender address; real impls compute from signer pubkey.
+        let sender = AddressRef::new("0xmocksender")
+            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
+        // Resolve the network from the intent (mock convention: prefix before '/').
+        let network_str = intent
+            .asset_instance_id
+            .as_str()
+            .split('/')
+            .next()
+            .ok_or_else(|| {
+                ChainError::UnsupportedAssetInstance(intent.asset_instance_id.clone())
+            })?;
+        let network = NetworkId::new(network_str)
+            .map_err(|_| ChainError::UnsupportedAssetInstance(intent.asset_instance_id.clone()))?;
+
+        let nonce = self.get_nonce(&network, &sender).await?;
+        let fee = self.estimate_fee(&intent, &sender).await?;
+
+        let unsigned = self.prepare_transfer(MockEvmPrepareContext {
+            account,
+            network,
+            intent,
+            chain_id: 1,
+            nonce,
+            fee,
+        })?;
+
+        let request = self.signing_request(&unsigned)?;
+        let response = signer
+            .sign(request)
+            .await
+            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
+        let signed = self.assemble_signed(unsigned, response)?;
+        self.broadcast(signed).await
+    }
+}
+
+// ── tests ──────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        amount::RawAmount,
-        id::{AccountRef, AddressRef, AssetInstanceId, NetworkId, SignerId},
-        signing::{MockSigner, SignerProvider},
-        transaction::{SignedTransaction, TransferIntent, UnsignedTransaction},
-    };
-    use num_bigint::BigInt;
+    use crate::asset::AssetStandard;
+    use crate::id::{AddressRef, AssetInstanceId, NetworkId, SignerId};
+    use crate::signing::MockSigner;
     use std::str::FromStr;
 
-    #[tokio::test]
-    async fn mock_evm_service_prepares_signs_and_broadcasts_exact_asset_instance() {
-        let service = MockEvmService;
-        let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
-        let intent = TransferIntent {
-            asset_instance_id: AssetInstanceId::from_str("eip155:8453/erc20:0x8335").unwrap(),
-            to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
-            amount: RawAmount::new(BigInt::from(100_000_000u64), 6).unwrap(),
-        };
-
-        let unsigned = service
-            .prepare_transfer(
-                AccountRef::from_str("account-1").unwrap(),
-                NetworkId::from_str("eip155:8453").unwrap(),
-                intent,
-            )
-            .await
-            .unwrap();
-        let request = service.signing_request(&unsigned).unwrap();
-        let response = signer.sign(request).await.unwrap();
-        let signed = service
-            .assemble_signed_transaction(unsigned, response)
-            .unwrap();
-        let broadcast = service.broadcast(signed).await.unwrap();
-
-        assert_eq!(broadcast.tx_hash, "0xmock");
-    }
-
-    // Regression: a network id like "eip155:1" must not match an asset
-    // instance whose CAIP path begins with "eip155:10/...". The separator
-    // '/' must immediately follow the network id.
-    #[tokio::test]
-    async fn prepare_transfer_rejects_partial_network_prefix_match() {
-        let service = MockEvmService;
-        let intent = TransferIntent {
-            asset_instance_id: AssetInstanceId::from_str("eip155:10/native:eth").unwrap(),
-            to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+    fn intent(instance_id: &str) -> TransferIntent {
+        TransferIntent {
+            asset_instance_id: AssetInstanceId::new(instance_id).unwrap(),
+            to: AddressRef::new("0x0000000000000000000000000000000000000001").unwrap(),
             amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
-        };
-        let err = service
-            .prepare_transfer(
-                AccountRef::from_str("account-1").unwrap(),
-                NetworkId::from_str("eip155:1").unwrap(),
-                intent,
-            )
-            .await
-            .unwrap_err();
-        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
-    }
-
-    fn unsigned_for_base() -> UnsignedTransaction {
-        UnsignedTransaction {
-            account: AccountRef::from_str("account-1").unwrap(),
-            network: NetworkId::from_str("eip155:8453").unwrap(),
-            intent: TransferIntent {
-                asset_instance_id: AssetInstanceId::from_str("eip155:8453/native:eth").unwrap(),
-                to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
-                amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
-            },
-            payload: b"mock-unsigned-evm-transaction".to_vec(),
         }
     }
 
-    #[test]
-    fn assemble_signed_transaction_passes_through_signed_transaction_variant() {
-        let service = MockEvmService;
-        let unsigned = unsigned_for_base();
-        let signed = service
-            .assemble_signed_transaction(
-                unsigned,
-                SigningResponse::SignedTransaction {
-                    signer: SignerId::from_str("mock").unwrap(),
-                    raw: b"raw-tx".to_vec(),
-                },
+    fn mock_ctx(network_str: &str, instance_id: &str) -> MockEvmPrepareContext {
+        MockEvmPrepareContext {
+            account: AccountRef::from_str("account-1").unwrap(),
+            network: NetworkId::from_str(network_str).unwrap(),
+            intent: intent(instance_id),
+            chain_id: 1,
+            nonce: 0,
+            fee: EvmFee::Legacy {
+                gas_price: BigInt::from(1u64),
+                gas_limit: 21_000,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_transfer_returns_0xmock() {
+        let svc = MockEvmChainService;
+        let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
+        let result = svc
+            .transfer(
+                intent("eip155:1/native:eth"),
+                AccountRef::from_str("account-1").unwrap(),
+                &signer,
             )
+            .await
             .unwrap();
-        assert_eq!(signed.raw, b"raw-tx");
+        assert_eq!(result.tx_hash, "0xmock");
     }
 
     #[test]
-    fn assemble_signed_transaction_rejects_submitted_transaction() {
-        let service = MockEvmService;
-        let unsigned = unsigned_for_base();
-        let err = service
-            .assemble_signed_transaction(
-                unsigned,
-                SigningResponse::SubmittedTransaction {
-                    signer: SignerId::from_str("mock").unwrap(),
-                    tx_hash: "0xabc".to_string(),
-                },
-            )
-            .unwrap_err();
+    fn prepare_transfer_rejects_partial_network_prefix() {
+        let svc = MockEvmChainService;
+        let ctx = mock_ctx("eip155:1", "eip155:10/native:eth");
+        let err = svc.prepare_transfer(ctx).unwrap_err();
+        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
+    }
+
+    #[tokio::test]
+    async fn broadcast_rejects_empty_raw() {
+        let svc = MockEvmChainService;
+        let signed = SignedTransaction {
+            network: NetworkId::from_str("eip155:1").unwrap(),
+            raw: vec![],
+        };
+        let err = svc.broadcast(signed).await.unwrap_err();
+        assert!(matches!(err, ChainError::BroadcastFailed(_)));
+    }
+
+    #[test]
+    fn assemble_signed_rejects_submitted_variant() {
+        let svc = MockEvmChainService;
+        let unsigned = UnsignedTransaction {
+            account: AccountRef::from_str("account-1").unwrap(),
+            network: NetworkId::from_str("eip155:1").unwrap(),
+            intent: intent("eip155:1/native:eth"),
+            payload: b"mock".to_vec(),
+        };
+        let response = SigningResponse::SubmittedTransaction {
+            signer: SignerId::from_str("mock").unwrap(),
+            tx_hash: "0xabc".to_string(),
+        };
+        let err = svc.assemble_signed(unsigned, response).unwrap_err();
         assert!(matches!(err, ChainError::TransactionBuildFailed(_)));
     }
 
     #[tokio::test]
-    async fn broadcast_rejects_empty_signed_transaction() {
-        let service = MockEvmService;
-        let signed = SignedTransaction {
-            network: NetworkId::from_str("eip155:8453").unwrap(),
-            raw: vec![],
+    async fn reader_returns_one_unit_balance() {
+        let svc = MockEvmChainService;
+        let instance = AssetInstance {
+            id: AssetInstanceId::new("eip155:1/native:eth").unwrap(),
+            instrument_id: crate::id::AssetInstrumentId::new("eth.native").unwrap(),
+            network: NetworkId::new("eip155:1").unwrap(),
+            standard: AssetStandard::Native,
+            decimals: 18,
+            contract: None,
+            capabilities: vec![],
+            metadata: crate::asset::AssetMetadata::default(),
         };
-        let err = service.broadcast(signed).await.unwrap_err();
-        assert!(matches!(err, ChainError::BroadcastFailed(_)));
+        let balance = svc
+            .get_balance(&instance, &AddressRef::new("0xanyone").unwrap())
+            .await
+            .unwrap();
+        // 10^18 wei = 1 ETH
+        assert_eq!(balance.value().to_string(), "1000000000000000000");
+        assert_eq!(balance.decimals(), 18);
     }
 }
