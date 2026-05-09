@@ -3,8 +3,8 @@ mod common;
 use atlas_core::{
     amount::RawAmount,
     id::{AccountRef, AddressRef, SignerId},
-    service::{ChainService, MockEvmService},
-    signing::{MockSigner, SignerProvider},
+    service::{ChainService, MockEvmChainService},
+    signing::MockSigner,
     transaction::TransferIntent,
 };
 use common::registry;
@@ -17,9 +17,8 @@ async fn base_usdc_transfer_smoke_flow_uses_exact_asset_instance() {
     let asset = registry
         .asset_instance("eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
         .unwrap();
-    let network = registry.network(asset.network.as_str()).unwrap();
 
-    let service = MockEvmService;
+    let service = MockEvmChainService;
     let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
     let intent = TransferIntent {
         asset_instance_id: asset.id.clone(),
@@ -27,20 +26,10 @@ async fn base_usdc_transfer_smoke_flow_uses_exact_asset_instance() {
         amount: RawAmount::new(BigInt::from(100_000_000u64), asset.decimals).unwrap(),
     };
 
-    let unsigned = service
-        .prepare_transfer(
-            AccountRef::from_str("account-1").unwrap(),
-            network.id.clone(),
-            intent,
-        )
+    let broadcast = service
+        .transfer(intent, AccountRef::from_str("account-1").unwrap(), &signer)
         .await
         .unwrap();
-    let request = service.signing_request(&unsigned).unwrap();
-    let response = signer.sign(request).await.unwrap();
-    let signed = service
-        .assemble_signed_transaction(unsigned, response)
-        .unwrap();
-    let broadcast = service.broadcast(signed).await.unwrap();
 
     assert_eq!(broadcast.tx_hash, "0xmock");
 }
