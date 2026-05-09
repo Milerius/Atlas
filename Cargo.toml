@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/atlas-core", "crates/atlas-scenarios", "crates/atlas-verify"]
+members = [
+  "crates/atlas-core",
+  "crates/atlas-evm",
+  "crates/atlas-scenarios",
+  "crates/atlas-verify",
+]
 resolver = "2"
 
 [workspace.package]
@@ -8,13 +13,25 @@ license = "MIT"
 repository = "https://github.com/milerius/Atlas"
 
 [workspace.dependencies]
-async-trait = "0.1"
-bolero = "0.13"
-cucumber = "0.22"
-num-bigint = { version = "0.4", features = ["serde"] }
-num-traits = "0.2"
-rust_decimal = { version = "1", features = ["serde"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-tokio = { version = "1", features = ["macros"] }
+alloy-consensus     = "2.0"
+alloy-eips          = "2.0"
+alloy-network       = "2.0"
+alloy-primitives    = { version = "1", features = ["serde"] }
+alloy-provider      = "2.0"
+alloy-rlp           = "0.3"
+alloy-rpc-types-eth = "2.0"
+alloy-signer        = "2.0"
+alloy-signer-local  = { version = "2.0", features = ["mnemonic", "keystore"] }
+async-trait         = "0.1"
+bip32               = "0.5"
+bip39               = "2"
+bolero              = "0.13"
+cucumber            = "0.22"
+eth-keystore        = "0.5"
+num-bigint          = { version = "0.4", features = ["serde"] }
+num-traits          = "0.2"
+rust_decimal        = { version = "1", features = ["serde"] }
+serde               = { version = "1", features = ["derive"] }
+serde_json          = "1"
+thiserror           = "2"
+tokio               = { version = "1", features = ["macros"] }
