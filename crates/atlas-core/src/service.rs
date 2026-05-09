@@ -135,6 +135,15 @@ pub trait ChainService: Send + Sync {
     /// reachable from generic code.
     type Fee;
 
+    /// Send `intent` from `account`, signing with `signer`.
+    ///
+    /// **v1 `account` contract:** `AccountRef` must carry a chain-native
+    /// address string (e.g. an EIP-55 hex address for EVM). Mocks that
+    /// use opaque ids like `"account-1"` are accepted by
+    /// [`MockEvmChainService`] but rejected by real chain services. A
+    /// later atlas-account milestone will derive the sender from the
+    /// signer's public key; until then, callers are responsible for
+    /// pairing matching `account` + `signer` values.
     async fn transfer(
         &self,
         intent: TransferIntent,
