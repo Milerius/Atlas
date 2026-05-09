@@ -226,10 +226,13 @@ fn parse_65_byte_signature(bytes: &[u8]) -> Result<Signature, ChainError> {
         0 | 27 => false,
         1 | 28 => true,
         _ => {
-            // EIP-155: v = 35 + 2 * chain_id + parity. Caller may have already
-            // applied EIP-155; treat anything else as an error.
-            return Err(ChainError::InvalidAddress(format!(
-                "unexpected signature recovery byte: {}",
+            // EIP-155: v = 35 + 2 * chain_id + parity. EIP-1559 envelopes
+            // expect parity bytes only ({0, 1, 27, 28}); a signer that
+            // returns an EIP-155 v hits this path. Surface as a build
+            // failure (signature shape doesn't match what the codec
+            // expects) rather than InvalidAddress.
+            return Err(ChainError::TransactionBuildFailed(format!(
+                "unexpected signature recovery byte: {} (expected 0/1 or 27/28)",
                 v_byte
             )));
         }

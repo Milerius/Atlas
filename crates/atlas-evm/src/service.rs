@@ -91,10 +91,10 @@ impl<P: Provider + Clone + Send + Sync + 'static> ChainService for EvmChainServi
         })?;
 
         let request = self.codec.signing_request(&unsigned)?;
-        let response = signer
-            .sign(request)
-            .await
-            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
+        // Typed: `SigningError` propagates through `ChainError::Signing`
+        // (the `#[from]` impl). Callers that need to distinguish, e.g.,
+        // `UserRejected` can match on the inner variant.
+        let response = signer.sign(request).await?;
         let signed = self.codec.assemble_signed(unsigned, response)?;
         self.broadcaster.broadcast(signed).await
     }

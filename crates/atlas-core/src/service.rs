@@ -341,10 +341,8 @@ impl ChainService for MockEvmChainService {
         })?;
 
         let request = self.signing_request(&unsigned)?;
-        let response = signer
-            .sign(request)
-            .await
-            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
+        // Typed: `SigningError` propagates through `ChainError::Signing`.
+        let response = signer.sign(request).await?;
         let signed = self.assemble_signed(unsigned, response)?;
         self.broadcast(signed).await
     }

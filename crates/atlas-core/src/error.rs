@@ -117,6 +117,12 @@ pub enum ChainError {
     /// RPC transport / provider error encountered by a chain service.
     #[error("rpc error: {0}")]
     Rpc(#[from] RpcError),
+    /// Signer-side failure surfaced through a chain-service orchestrator.
+    /// Preserves the typed [`SigningError`] variant so callers can match
+    /// on `UserRejected` / `UnsupportedCurve` / `InvalidSignature` etc.
+    /// without parsing strings.
+    #[error("signing error: {0}")]
+    Signing(#[from] SigningError),
 }
 
 /// Errors raised by [`crate::signing::SignerProvider`] implementations.
