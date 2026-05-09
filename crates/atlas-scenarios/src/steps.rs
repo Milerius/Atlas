@@ -5,7 +5,7 @@
 use crate::world::{run_transfer_pipeline, AtlasWorld};
 use atlas_core::amount::RawAmount;
 use atlas_core::id::{NetworkId, SignerId};
-use atlas_core::service::MockEvmService;
+use atlas_core::service::MockEvmChainService;
 use atlas_core::signing::MockSigner;
 use cucumber::{given, then, when};
 use num_bigint::BigInt;
@@ -20,7 +20,7 @@ pub fn registry_loaded(world: &mut AtlasWorld) {
 
 #[given("a mock EVM chain service")]
 pub fn mock_service(world: &mut AtlasWorld) {
-    world.service = Some(MockEvmService);
+    world.service = Some(MockEvmChainService);
 }
 
 #[given(regex = r#"^a mock signer named "([^"]+)"$"#)]
