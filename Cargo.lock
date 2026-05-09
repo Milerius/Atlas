@@ -899,6 +899,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "atlas-core",
+ "atlas-evm",
  "cucumber",
  "num-bigint",
  "serde_json",

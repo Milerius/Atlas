@@ -5,8 +5,8 @@
 use crate::world::{run_transfer_pipeline, AtlasWorld};
 use atlas_core::amount::RawAmount;
 use atlas_core::id::{NetworkId, SignerId};
-use atlas_core::service::MockEvmChainService;
 use atlas_core::signing::MockSigner;
+use atlas_evm::mock::MockEvmChainService;
 use cucumber::{given, then, when};
 use num_bigint::BigInt;
 use std::str::FromStr;

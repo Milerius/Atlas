@@ -23,10 +23,11 @@
 //! - **Per-chain-family execution** ([`service`]) — five focused traits
 //!   ([`service::ChainCodec`], [`service::ChainReader`],
 //!   [`service::FeeEstimator`], [`service::ChainBroadcaster`],
-//!   [`service::ChainService`]) plus a
-//!   [`service::MockEvmChainService`] smoke implementation. Chain services
-//!   accept only concrete `AssetInstance`s; `AssetGroup` and
-//!   `AssetInstrument` are for display, search, pricing, and routing.
+//!   [`service::ChainService`]). Concrete implementations (real
+//!   `EvmChainService`, in-tree `MockEvmChainService`) live in per-chain
+//!   crates such as `atlas-evm`. Chain services accept only concrete
+//!   `AssetInstance`s; `AssetGroup` and `AssetInstrument` are for display,
+//!   search, pricing, and routing.
 //! - **Transaction lifecycle types** ([`transaction`]) — `TransferIntent`,
 //!   `UnsignedTransaction`, `SignedTransaction`, `BroadcastResult`.
 //! - **Embedded official registry** ([`official`]) — Atlas's curated chain

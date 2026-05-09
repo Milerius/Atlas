@@ -5,9 +5,9 @@ use atlas_core::asset::AssetInstance;
 use atlas_core::error::ChainError;
 use atlas_core::id::AssetInstanceId;
 use atlas_core::registry::{AssetRegistryDocument, ChainRegistryDocument, Registry};
-use atlas_core::service::MockEvmChainService;
 use atlas_core::signing::MockSigner;
 use atlas_core::transaction::BroadcastResult;
+use atlas_evm::mock::MockEvmChainService;
 use cucumber::World;
 
 #[derive(Debug, Default, World)]

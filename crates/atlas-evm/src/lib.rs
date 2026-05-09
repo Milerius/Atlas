@@ -22,5 +22,6 @@ pub mod broadcaster;
 pub mod codec;
 pub mod error;
 pub mod fee_estimator;
+pub mod mock;
 pub mod reader;
 pub mod service;
