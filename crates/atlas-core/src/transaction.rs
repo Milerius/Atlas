@@ -9,6 +9,7 @@
 use crate::{
     amount::RawAmount,
     id::{AccountRef, AddressRef, AssetInstanceId, NetworkId},
+    signing::SigningRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -64,4 +65,39 @@ pub struct BroadcastResult {
     /// for Solana).
     #[serde(rename = "txHash")]
     pub tx_hash: String,
+}
+
+/// Wire-format pair of "what to sign" + "what to assemble against",
+/// emitted by a server-side build step and consumed by a client-side
+/// signer.
+///
+/// Atlas's chain services split the transfer flow into a pure codec
+/// seam (`prepare_transfer` / `signing_request` / `assemble_signed`)
+/// and an RPC seam (reader / fee estimator / broadcaster). A common
+/// integration shape is:
+///
+/// 1. The **server** holds the codec + reader + fee estimator. It has
+///    no key material. It calls a `prepare_unsigned_bundle` on the
+///    chain service and serialises the resulting [`UnsignedBundle`]
+///    over the wire.
+/// 2. The **client** holds a `SignerProvider` (local key, MPC, Privy,
+///    hardware wallet, …) and a broadcaster. It deserialises the
+///    bundle, signs `signing_request`, and calls
+///    `assemble_and_broadcast` on its own chain service.
+///
+/// Both halves of the bundle are independently `Serialize` /
+/// `Deserialize`, but shipping them together as a single JSON object
+/// keeps the wire format obvious and lets the server pre-compute the
+/// signing digest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UnsignedBundle {
+    /// Encoded unsigned transaction. Opaque to the client beyond the
+    /// fact that it must be passed back into `assemble_signed` along
+    /// with whatever the signer returned.
+    pub unsigned: UnsignedTransaction,
+    /// Pre-computed signing request — the chain-specific digest /
+    /// payload kind / curve the signer is expected to consume. Saves
+    /// the client from re-deriving it from `unsigned.payload`.
+    #[serde(rename = "signingRequest")]
+    pub signing_request: SigningRequest,
 }

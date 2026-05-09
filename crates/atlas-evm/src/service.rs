@@ -9,8 +9,10 @@ use atlas_core::error::ChainError;
 use atlas_core::fee::EvmFee;
 use atlas_core::id::{AccountRef, AddressRef, NetworkId};
 use atlas_core::service::{ChainBroadcaster, ChainCodec, ChainReader, ChainService, FeeEstimator};
-use atlas_core::signing::SignerProvider;
-use atlas_core::transaction::{BroadcastResult, TransferIntent};
+use atlas_core::signing::{SignerProvider, SigningResponse};
+use atlas_core::transaction::{
+    BroadcastResult, TransferIntent, UnsignedBundle, UnsignedTransaction,
+};
 
 use crate::broadcaster::EvmBroadcaster;
 use crate::codec::{EvmCodec, EvmPrepareContext};
@@ -41,20 +43,25 @@ impl<P: Provider + Clone> EvmChainService<P> {
             chain_id,
         }
     }
-}
 
-#[async_trait]
-impl<P: Provider + Clone + Send + Sync + 'static> ChainService for EvmChainService<P> {
-    type PrepareContext = EvmPrepareContext;
-    type Fee = EvmFee;
-
-    async fn transfer(
+    /// Server-side build step: validate the intent, fetch nonce + fee,
+    /// run the codec, and return the [`UnsignedBundle`] (encoded
+    /// unsigned bytes plus the pre-computed signing request).
+    ///
+    /// **No signer required.** A backend that holds only RPC credentials
+    /// and zero key material can call this, serialise the result, and
+    /// hand it to a client (browser, mobile, hardware wallet) for the
+    /// signing step.
+    ///
+    /// The corresponding client step is [`Self::assemble_and_broadcast`].
+    pub async fn prepare_unsigned_bundle(
         &self,
         intent: TransferIntent,
         account: AccountRef,
-        signer: &dyn SignerProvider,
-    ) -> Result<BroadcastResult, ChainError> {
-        // Validate that the intent's asset belongs to this orchestrator's network.
+    ) -> Result<UnsignedBundle, ChainError>
+    where
+        P: Send + Sync + 'static,
+    {
         let prefix = format!("{}/", self.network.as_str());
         if !intent.asset_instance_id.as_str().starts_with(&prefix) {
             return Err(ChainError::UnsupportedAssetInstance(
@@ -62,21 +69,14 @@ impl<P: Provider + Clone + Send + Sync + 'static> ChainService for EvmChainServi
             ));
         }
 
-        // For v1, the AccountRef holds the EVM address directly. Higher-level
-        // account types (atlas-account) come later. The sender address is
-        // derived from `account` here without consulting the signer's pubkey.
         let sender = AddressRef::new(account.as_str())
             .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
 
-        // Concurrent: fetch nonce + estimate fee.
         let (nonce, fee) = tokio::try_join!(
             self.reader.get_nonce(&self.network, &sender),
             self.fee_estimator.estimate_fee(&intent, &sender),
         )?;
 
-        // Resolve standard + contract from intent.asset_instance_id.
-        // Caller is expected to pre-resolve via Registry::asset_instance(...);
-        // for v1 we infer from the CAIP path: `/native:` vs `/erc20:`.
         let (standard, contract) = parse_standard_from_instance(&intent)?;
 
         let unsigned = self.codec.prepare_transfer(EvmPrepareContext {
@@ -90,13 +90,53 @@ impl<P: Provider + Clone + Send + Sync + 'static> ChainService for EvmChainServi
             contract,
         })?;
 
-        let request = self.codec.signing_request(&unsigned)?;
+        let signing_request = self.codec.signing_request(&unsigned)?;
+        Ok(UnsignedBundle {
+            unsigned,
+            signing_request,
+        })
+    }
+
+    /// Client-side finalize step: assemble the signed envelope from
+    /// `unsigned` + whatever the signer returned, then broadcast.
+    ///
+    /// This is the counterpart to [`Self::prepare_unsigned_bundle`]:
+    /// the unsigned bytes typically arrived over the wire from a
+    /// backend that has no key material, and `response` came from a
+    /// signer the client trusts (local key, hardware wallet, MPC).
+    pub async fn assemble_and_broadcast(
+        &self,
+        unsigned: UnsignedTransaction,
+        response: SigningResponse,
+    ) -> Result<BroadcastResult, ChainError>
+    where
+        P: Send + Sync + 'static,
+    {
+        let signed = self.codec.assemble_signed(unsigned, response)?;
+        self.broadcaster.broadcast(signed).await
+    }
+}
+
+#[async_trait]
+impl<P: Provider + Clone + Send + Sync + 'static> ChainService for EvmChainService<P> {
+    type PrepareContext = EvmPrepareContext;
+    type Fee = EvmFee;
+
+    async fn transfer(
+        &self,
+        intent: TransferIntent,
+        account: AccountRef,
+        signer: &dyn SignerProvider,
+    ) -> Result<BroadcastResult, ChainError> {
+        // In-process flow = server build + client sign + broadcast,
+        // collapsed onto one machine. Any change to the build or
+        // assemble step must keep both halves consistent.
+        let bundle = self.prepare_unsigned_bundle(intent, account).await?;
         // Typed: `SigningError` propagates through `ChainError::Signing`
         // (the `#[from]` impl). Callers that need to distinguish, e.g.,
         // `UserRejected` can match on the inner variant.
-        let response = signer.sign(request).await?;
-        let signed = self.codec.assemble_signed(unsigned, response)?;
-        self.broadcaster.broadcast(signed).await
+        let response = signer.sign(bundle.signing_request).await?;
+        self.assemble_and_broadcast(bundle.unsigned, response).await
     }
 }
 
