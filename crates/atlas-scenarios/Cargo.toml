@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 atlas-core = { path = "../atlas-core" }
 atlas-evm = { path = "../atlas-evm" }
+atlas-signer-localkey = { path = "../atlas-signer-localkey" }
 async-trait.workspace = true
 cucumber.workspace = true
 num-bigint.workspace = true

@@ -4,12 +4,19 @@
 
 use crate::world::{run_transfer_pipeline, AtlasWorld};
 use atlas_core::amount::RawAmount;
-use atlas_core::id::{NetworkId, SignerId};
+use atlas_core::id::{ChainId, NetworkId, SignerId};
 use atlas_core::signing::MockSigner;
 use atlas_evm::mock::MockEvmChainService;
+use atlas_signer_localkey::LocalKeySigner;
 use cucumber::{given, then, when};
 use num_bigint::BigInt;
 use std::str::FromStr;
+
+/// Standard BIP-39 test mnemonic. The canonical Ethereum address at
+/// `m/44'/60'/0'/0/0` for this mnemonic is well-known and used by
+/// every wallet's smoke tests.
+const TEST_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 // ── Given ──────────────────────────────────────────────────────────────────
 
@@ -142,4 +149,51 @@ pub fn assert_two_evm_networks(world: &mut AtlasWorld) {
     let base = registry.network("eip155:8453").expect("base");
     assert_eq!(ethereum.chain.as_str(), "evm");
     assert_eq!(base.chain.as_str(), "evm");
+}
+
+// ── Signer wiring through the registry ─────────────────────────────────────
+
+#[then(regex = r#"^the EVM chain default derivation path is "([^"]+)"$"#)]
+pub fn assert_evm_default_derivation_path(world: &mut AtlasWorld, expected: String) {
+    let chain = world
+        .registry()
+        .chain(&ChainId::from_str("evm").expect("evm chain id"))
+        .expect("evm chain entry must exist in the valid fixtures");
+    let path = chain
+        .default_derivation_path
+        .as_deref()
+        .expect("EVM chain entry must carry a default_derivation_path");
+    assert_eq!(path, expected);
+}
+
+#[when(
+    "I derive a LocalKeySigner from the BIP-39 test mnemonic using the EVM chain's default path"
+)]
+pub fn derive_signer_via_registry_path(world: &mut AtlasWorld) {
+    let chain = world
+        .registry()
+        .chain(&ChainId::from_str("evm").expect("evm chain id"))
+        .expect("evm chain entry must exist");
+    let path = chain
+        .default_derivation_path
+        .as_deref()
+        .expect("EVM chain entry must carry a default_derivation_path");
+    let signer = LocalKeySigner::from_mnemonic(
+        SignerId::from_str("scenario-signer").expect("signer id"),
+        TEST_MNEMONIC,
+        path,
+    )
+    .expect("LocalKeySigner construction must succeed for the BIP-39 test mnemonic");
+    world.last_signer_address = Some(signer.address());
+}
+
+#[then(regex = r#"^the signer address is "([^"]+)"$"#)]
+pub fn assert_signer_address(world: &mut AtlasWorld, expected: String) {
+    let actual = world
+        .last_signer_address
+        .as_deref()
+        .expect("no signer address captured");
+    // Compare lowercased so the assertion is independent of EIP-55
+    // checksum rendering — the underlying bytes are what matter.
+    assert_eq!(actual.to_lowercase(), expected.to_lowercase());
 }

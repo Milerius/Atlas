@@ -24,6 +24,9 @@ pub struct AtlasWorld {
     pub scratch_to: Option<String>,
     pub scratch_asset_instance_id: Option<AssetInstanceId>,
     pub scratch_network_id: Option<atlas_core::id::NetworkId>,
+    /// Address of the most recently derived `LocalKeySigner`. Captured
+    /// for assertion in signer scenarios.
+    pub last_signer_address: Option<String>,
 }
 
 impl AtlasWorld {

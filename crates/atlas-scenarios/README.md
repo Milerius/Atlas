@@ -59,8 +59,9 @@ The harness uses `World::run_and_exit` rather than `run` so a failing scenario s
 |---|---|---|
 | `asset_resolution.feature` | exact-instance lookup, group → instances expansion | `Registry` resolution surface |
 | `transfer.feature` | mock transfer happy path, network-mismatch rejection | `ChainService::transfer` path |
+| `signer.feature` | EVM chain exposes `default_derivation_path`, signer derived from registry path lands on a known address | registry → signer wiring |
 
-7 scenarios / 30 steps total.
+9 scenarios / 35 steps total.
 
 ## License
 
