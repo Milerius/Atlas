@@ -105,6 +105,82 @@ fn prepare_transfer_rejects_negative_fee_in_eip1559() {
 }
 
 #[test]
+fn prepare_transfer_rejects_negative_priority_fee_in_eip1559() {
+    // max_fee_per_gas valid, max_priority_fee_per_gas negative — the
+    // codec must reject on the priority side too, not just on the
+    // first numeric encountered.
+    let codec = EvmCodec;
+    let ctx = base_ctx(
+        EvmFee::Eip1559 {
+            max_fee_per_gas: BigInt::from(30_000_000_000u64),
+            max_priority_fee_per_gas: BigInt::from(-1),
+            gas_limit: 21_000,
+            l1_fee_wei: None,
+        },
+        AssetStandard::Native,
+        None,
+    );
+    let err = codec.prepare_transfer(ctx).unwrap_err();
+    assert!(matches!(err, ChainError::TransactionBuildFailed(_)));
+}
+
+#[test]
+fn prepare_transfer_erc20_rejects_malformed_contract_address() {
+    let codec = EvmCodec;
+    let ctx = EvmPrepareContext {
+        account: AccountRef::from_str("acct").unwrap(),
+        network: NetworkId::from_str("eip155:1").unwrap(),
+        intent: TransferIntent {
+            asset_instance_id: AssetInstanceId::from_str(
+                "eip155:1/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            )
+            .unwrap(),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000003").unwrap(),
+            amount: RawAmount::new(BigInt::from(1u64), 6).unwrap(),
+        },
+        chain_id: 1,
+        nonce: 0,
+        fee: EvmFee::Legacy {
+            gas_price: BigInt::from(1u64),
+            gas_limit: 60_000,
+        },
+        standard: AssetStandard::Erc20,
+        contract: Some("not-an-address".to_string()),
+    };
+    let err = codec.prepare_transfer(ctx).unwrap_err();
+    assert!(matches!(err, ChainError::InvalidAddress(_)));
+}
+
+#[test]
+fn prepare_transfer_erc20_rejects_amount_exceeding_256_bits() {
+    let codec = EvmCodec;
+    // Amount of 2^256 — overflows u256 in the ERC-20 calldata encoding.
+    let huge = BigInt::from(1u64) << 256;
+    let ctx = EvmPrepareContext {
+        account: AccountRef::from_str("acct").unwrap(),
+        network: NetworkId::from_str("eip155:1").unwrap(),
+        intent: TransferIntent {
+            asset_instance_id: AssetInstanceId::from_str(
+                "eip155:1/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            )
+            .unwrap(),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000003").unwrap(),
+            amount: RawAmount::new(huge, 6).unwrap(),
+        },
+        chain_id: 1,
+        nonce: 0,
+        fee: EvmFee::Legacy {
+            gas_price: BigInt::from(1u64),
+            gas_limit: 60_000,
+        },
+        standard: AssetStandard::Erc20,
+        contract: Some("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".to_string()),
+    };
+    let err = codec.prepare_transfer(ctx).unwrap_err();
+    assert!(matches!(err, ChainError::TransactionBuildFailed(_)));
+}
+
+#[test]
 fn prepare_transfer_rejects_fee_overflowing_u128() {
     let codec = EvmCodec;
     // 2^128 — first value that doesn't fit in u128.

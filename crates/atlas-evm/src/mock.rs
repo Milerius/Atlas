@@ -113,8 +113,9 @@ impl ChainReader for MockEvmChainService {
         _address: &AddressRef,
     ) -> Result<RawAmount, ChainError> {
         let one_unit = BigInt::from(10u64).pow(instance.decimals as u32);
-        RawAmount::new(one_unit, instance.decimals)
-            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))
+        // `10^n` is non-negative for any `n: u8`, so `RawAmount::new`
+        // cannot fail here.
+        Ok(RawAmount::new(one_unit, instance.decimals).expect("10^n is non-negative"))
     }
 
     async fn get_nonce(
@@ -181,13 +182,16 @@ impl ChainService for MockEvmChainService {
         account: AccountRef,
         signer: &dyn atlas_core::signing::SignerProvider,
     ) -> Result<BroadcastResult, ChainError> {
-        let sender = AddressRef::new("0xmocksender")
-            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
-        let network_str = intent
+        // Static literal: `AddressRef::new` only rejects empty / whitespace.
+        let sender = AddressRef::new("0xmocksender").expect("static literal is non-empty");
+        // Mock convention: derive the network from the CAIP-style asset
+        // instance id. `split_once('/')` returns None when the instance id
+        // has no `/` separator (a malformed input the registry would
+        // never produce, but tests can construct directly).
+        let (network_str, _) = intent
             .asset_instance_id
             .as_str()
-            .split('/')
-            .next()
+            .split_once('/')
             .ok_or_else(|| {
                 ChainError::UnsupportedAssetInstance(intent.asset_instance_id.clone())
             })?;
@@ -313,5 +317,77 @@ mod tests {
             .unwrap();
         assert_eq!(balance.value().to_string(), "1000000000000000000");
         assert_eq!(balance.decimals(), 18);
+    }
+
+    #[test]
+    fn assemble_signed_passes_through_signed_transaction_variant() {
+        let svc = MockEvmChainService;
+        let unsigned = UnsignedTransaction {
+            account: AccountRef::from_str("account-1").unwrap(),
+            network: NetworkId::from_str("eip155:1").unwrap(),
+            intent: intent("eip155:1/native:eth"),
+            payload: b"mock".to_vec(),
+        };
+        let response = SigningResponse::SignedTransaction {
+            signer: SignerId::from_str("mock").unwrap(),
+            raw: vec![0xde, 0xad, 0xbe, 0xef],
+        };
+        let signed = svc.assemble_signed(unsigned, response).unwrap();
+        assert_eq!(signed.raw, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[tokio::test]
+    async fn get_transaction_status_returns_confirmed_with_input_hash() {
+        let svc = MockEvmChainService;
+        let net = NetworkId::from_str("eip155:1").unwrap();
+        let status = svc.get_transaction_status(&net, "0xabc").await.unwrap();
+        match status {
+            TransactionStatus::Confirmed {
+                hash,
+                block_number,
+                gas_used,
+            } => {
+                assert_eq!(hash, "0xabc");
+                assert_eq!(block_number, 1);
+                assert_eq!(gas_used.to_string(), "21000");
+            }
+            other => panic!("expected Confirmed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn transfer_with_malformed_instance_id_returns_unsupported_asset() {
+        // No `/` separator → split_once returns None → mapped to
+        // UnsupportedAssetInstance.
+        let svc = MockEvmChainService;
+        let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
+        let intent = TransferIntent {
+            asset_instance_id: AssetInstanceId::new("noslash").unwrap(),
+            to: AddressRef::new("0x0000000000000000000000000000000000000001").unwrap(),
+            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+        };
+        let err = svc
+            .transfer(intent, AccountRef::from_str("account-1").unwrap(), &signer)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
+    }
+
+    #[tokio::test]
+    async fn transfer_with_empty_network_segment_returns_unsupported_asset() {
+        // Leading `/` → split_once succeeds with empty network_str →
+        // NetworkId::new fails → mapped to UnsupportedAssetInstance.
+        let svc = MockEvmChainService;
+        let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
+        let intent = TransferIntent {
+            asset_instance_id: AssetInstanceId::new("/native:eth").unwrap(),
+            to: AddressRef::new("0x0000000000000000000000000000000000000001").unwrap(),
+            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+        };
+        let err = svc
+            .transfer(intent, AccountRef::from_str("account-1").unwrap(), &signer)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
     }
 }

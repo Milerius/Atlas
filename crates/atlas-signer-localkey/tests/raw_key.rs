@@ -81,3 +81,22 @@ fn address_is_eip55_format() {
     assert!(addr.starts_with("0x"));
     assert_eq!(addr.len(), 42);
 }
+
+#[tokio::test]
+async fn rejects_non_transaction_digest_payload_kind() {
+    // LocalKeySigner v1 only handles `TransactionDigest`. Other kinds
+    // (`Message`, `TypedData`, …) surface as `UnsupportedPayload`.
+    let signer = make_signer();
+    let request = SigningRequest {
+        account: atlas_core::id::AccountRef::from_str("account-1").unwrap(),
+        network: atlas_core::id::NetworkId::from_str("eip155:1").unwrap(),
+        curve: Curve::Secp256k1,
+        payload_kind: SigningPayloadKind::Message,
+        payload: b"hello world".to_vec(),
+    };
+    let err = signer.sign(request).await.unwrap_err();
+    assert!(matches!(
+        err,
+        atlas_core::error::SigningError::UnsupportedPayload(_)
+    ));
+}

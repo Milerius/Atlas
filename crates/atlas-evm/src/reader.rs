@@ -84,8 +84,9 @@ impl<P: Provider + Clone> ChainReader for EvmReader<P> {
             }
         };
 
-        RawAmount::new(raw, instance.decimals)
-            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))
+        // `u256_to_bigint` always returns a non-negative value, so
+        // `RawAmount::new` cannot fail here.
+        Ok(RawAmount::new(raw, instance.decimals).expect("u256-derived value is non-negative"))
     }
 
     async fn get_nonce(

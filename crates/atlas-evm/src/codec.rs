@@ -310,12 +310,81 @@ mod tests {
     #[test]
     fn bigint_to_u256_rejects_negative() {
         let v = BigInt::from(-1);
-        assert!(bigint_to_u256(&v).is_err());
+        let err = bigint_to_u256(&v).unwrap_err();
+        assert!(matches!(
+            err,
+            ChainError::TransactionBuildFailed(msg) if msg.contains("negative")
+        ));
+    }
+
+    #[test]
+    fn bigint_to_u256_rejects_overflow() {
+        // 2^256 is the smallest BigInt that exceeds u256.
+        let v = BigInt::from(1u64) << 256;
+        let err = bigint_to_u256(&v).unwrap_err();
+        assert!(matches!(
+            err,
+            ChainError::TransactionBuildFailed(msg) if msg.contains("256")
+        ));
+    }
+
+    #[test]
+    fn bigint_to_u128_rejects_negative() {
+        let v = BigInt::from(-1);
+        let err = bigint_to_u128(&v).unwrap_err();
+        assert!(matches!(
+            err,
+            ChainError::TransactionBuildFailed(msg) if msg.contains("negative")
+        ));
     }
 
     #[test]
     fn bigint_to_u128_rejects_overflow() {
         let v = BigInt::from(u128::MAX) + BigInt::from(1u64);
-        assert!(bigint_to_u128(&v).is_err());
+        let err = bigint_to_u128(&v).unwrap_err();
+        assert!(matches!(
+            err,
+            ChainError::TransactionBuildFailed(msg) if msg.contains("u128")
+        ));
+    }
+
+    #[test]
+    fn evm_codec_auto_derives_are_exercised() {
+        // Derived `Clone + Debug + Default` on EvmCodec, and `Clone +
+        // Debug` on EvmPrepareContext. Consumers stash both in their
+        // own structs; touch each so the derived regions stay live.
+        let codec = EvmCodec;
+        let cloned = codec.clone();
+        let _ = format!("{cloned:?}");
+        // Touch the `Default` impl explicitly via the trait so the
+        // derived region stays live without tripping clippy's
+        // `default_constructed_unit_structs` lint.
+        let defaulted: EvmCodec = Default::default();
+        let _ = format!("{defaulted:?}");
+
+        use atlas_core::amount::RawAmount;
+        use atlas_core::asset::AssetStandard;
+        use atlas_core::id::{AccountRef as A, AddressRef as Ad, AssetInstanceId, NetworkId as N};
+        use atlas_core::transaction::TransferIntent;
+        use std::str::FromStr;
+        let ctx = EvmPrepareContext {
+            account: A::from_str("acct").unwrap(),
+            network: N::from_str("eip155:1").unwrap(),
+            intent: TransferIntent {
+                asset_instance_id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+                to: Ad::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+                amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+            },
+            chain_id: 1,
+            nonce: 0,
+            fee: EvmFee::Legacy {
+                gas_price: BigInt::from(1u64),
+                gas_limit: 21_000,
+            },
+            standard: AssetStandard::Native,
+            contract: None,
+        };
+        let cloned_ctx = ctx.clone();
+        let _ = format!("{cloned_ctx:?}");
     }
 }

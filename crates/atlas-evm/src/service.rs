@@ -156,3 +156,56 @@ fn parse_standard_from_instance(
         intent.asset_instance_id.clone(),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_core::amount::RawAmount;
+    use atlas_core::id::{AddressRef, AssetInstanceId};
+    use num_bigint::BigInt;
+    use std::str::FromStr;
+
+    fn mk_intent(instance_id: &str) -> TransferIntent {
+        TransferIntent {
+            asset_instance_id: AssetInstanceId::from_str(instance_id).unwrap(),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+        }
+    }
+
+    #[test]
+    fn parse_standard_resolves_native() {
+        let (standard, contract) =
+            parse_standard_from_instance(&mk_intent("eip155:1/native:eth")).unwrap();
+        assert_eq!(standard, AssetStandard::Native);
+        assert_eq!(contract, None);
+    }
+
+    #[test]
+    fn parse_standard_resolves_erc20_with_contract() {
+        let (standard, contract) = parse_standard_from_instance(&mk_intent(
+            "eip155:1/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        ))
+        .unwrap();
+        assert_eq!(standard, AssetStandard::Erc20);
+        assert_eq!(
+            contract.as_deref(),
+            Some("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+        );
+    }
+
+    #[test]
+    fn parse_standard_rejects_instance_without_slash() {
+        // The transfer() entrypoint guards against this with the
+        // network-prefix check, but parse_standard_from_instance is its
+        // own seam: a missing `/` falls through to UnsupportedAssetInstance.
+        let err = parse_standard_from_instance(&mk_intent("noslash")).unwrap_err();
+        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
+    }
+
+    #[test]
+    fn parse_standard_rejects_unknown_segment() {
+        let err = parse_standard_from_instance(&mk_intent("eip155:1/spl:something")).unwrap_err();
+        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
+    }
+}

@@ -42,24 +42,18 @@ impl LocalKeySigner {
     /// the JSON already on disk, use [`Self::from_keystore_path`].
     pub fn from_keystore(id: SignerId, json: &str, password: &str) -> Result<Self, SigningError> {
         // eth-keystore 0.5 expects a path to the JSON file. Write the JSON
-        // to a tempfile, read it back as a key, and clean up.
+        // to a tempfile, read it back as a key, drop the tempfile.
+        //
+        // Tempfile creation / write failures only happen when the OS is in
+        // a degraded state (full disk, no permissions to TMPDIR) — the
+        // signer is not the layer that recovers from that, so we surface
+        // such failures as panics rather than typed errors.
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new()
-            .map_err(|e| SigningError::SignatureFailed(format!("tempfile create: {e}")))?;
+            .expect("tempfile creation should not fail in a healthy runtime");
         tmp.write_all(json.as_bytes())
-            .map_err(|e| SigningError::SignatureFailed(format!("tempfile write: {e}")))?;
-        let key_bytes = eth_keystore::decrypt_key(tmp.path(), password)
-            .map_err(|e| SigningError::SignatureFailed(format!("keystore decrypt: {e}")))?;
-
-        if key_bytes.len() != 32 {
-            return Err(SigningError::InvalidSignature(format!(
-                "decrypted keystore key has length {} (expected 32)",
-                key_bytes.len()
-            )));
-        }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&key_bytes);
-        Self::from_bytes(id, arr)
+            .expect("tempfile write should not fail in a healthy runtime");
+        Self::from_keystore_path(id, tmp.path(), password)
     }
 
     /// Construct from a JSON keystore at `path`.
@@ -68,17 +62,16 @@ impl LocalKeySigner {
         path: impl AsRef<std::path::Path>,
         password: &str,
     ) -> Result<Self, SigningError> {
-        let key_bytes = eth_keystore::decrypt_key(path.as_ref(), password)
-            .map_err(|e| SigningError::SignatureFailed(format!("keystore decrypt: {e}")))?;
-        if key_bytes.len() != 32 {
-            return Err(SigningError::InvalidSignature(format!(
-                "decrypted keystore key has length {} (expected 32)",
-                key_bytes.len()
-            )));
-        }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&key_bytes);
-        Self::from_bytes(id, arr)
+        // eth-keystore 0.5 deserialises the keystore JSON into a typed
+        // `EthKeystore` whose `crypto.ciphertext` is bounded to 32 bytes
+        // for secp256k1, so the decrypted key is always exactly 32 bytes
+        // when decryption succeeds. A length mismatch would be a library
+        // bug, not a runtime input we can recover from.
+        let key_bytes: [u8; 32] = eth_keystore::decrypt_key(path.as_ref(), password)
+            .map_err(|e| SigningError::SignatureFailed(format!("keystore decrypt: {e}")))?
+            .try_into()
+            .expect("eth-keystore 0.5 returns exactly 32 bytes for secp256k1");
+        Self::from_bytes(id, key_bytes)
     }
 
     /// Construct from a BIP-39 mnemonic + BIP-32 derivation path.
@@ -91,18 +84,23 @@ impl LocalKeySigner {
         use bip39::{Language, Mnemonic};
         use std::str::FromStr;
 
+        // The mnemonic and derivation path strings are user-supplied and
+        // surface typed errors. The derivation arithmetic that follows is
+        // total: a 64-byte BIP-39 seed is always a valid BIP-32 master
+        // input, and child-derivation never fails on a syntactically
+        // parsed `DerivationPath` — those would be library bugs we have
+        // no graceful recovery for.
         let mnemonic = Mnemonic::parse_in(Language::English, mnemonic)
             .map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
-        let seed = mnemonic.to_seed("");
-        let xprv =
-            bip32::XPrv::new(seed).map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
         let path = DerivationPath::from_str(derivation_path)
             .map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
+        let seed = mnemonic.to_seed("");
+        let xprv = bip32::XPrv::new(seed).expect("BIP-32 master from a 64-byte seed is total");
         let mut child = xprv;
         for n in path.iter() {
             child = child
                 .derive_child(n)
-                .map_err(|e| SigningError::SignatureFailed(e.to_string()))?;
+                .expect("BIP-32 child derivation is total on a parsed DerivationPath");
         }
         // bip32 0.5/0.6: to_bytes() returns [u8; 32] (PrivateKeyBytes).
         let private_bytes: [u8; 32] = child.to_bytes();
@@ -141,9 +139,14 @@ impl SignerProvider for LocalKeySigner {
                     )));
                 }
                 let digest = B256::from_slice(&request.payload);
+                // Signing a 32-byte digest with a constructed
+                // `PrivateKeySigner` is total: the key was validated at
+                // construction (`from_bytes`) and the digest length was
+                // checked above, so alloy's `sign_hash_sync` cannot
+                // surface an error on this path.
                 self.inner
                     .sign_hash_sync(&digest)
-                    .map_err(|e| SigningError::SignatureFailed(e.to_string()))?
+                    .expect("sign_hash_sync is total for a valid key + 32-byte digest")
             }
             other => {
                 return Err(SigningError::UnsupportedPayload(format!(
