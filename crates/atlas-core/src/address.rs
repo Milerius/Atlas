@@ -252,10 +252,14 @@ mod tests {
 
     #[test]
     fn solana_validation_rejects_evm_address() {
-        // Cross-chain confusion the other way. EVM 0x-prefixed hex
-        // happens to base58-decode, so the rejection comes from the
-        // length check.
+        // Cross-chain confusion the other way. EVM 0x-prefixed hex is
+        // rejected at the base58 decode step — `0` (zero) is not in
+        // Bitcoin's base58 alphabet, so decode fails on the very
+        // first character, before any length check.
         let err = AddressRef::for_format(EVM_LOWERCASE, AddressFormat::SolanaPubkey).unwrap_err();
         assert!(matches!(err, AddressError::InvalidFormat { .. }));
+        // Display includes the inner `reason`; assert we surface the
+        // base58-decode failure path explicitly.
+        assert!(format!("{err}").contains("base58 decode failed"));
     }
 }

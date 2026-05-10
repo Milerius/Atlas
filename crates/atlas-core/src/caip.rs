@@ -11,7 +11,7 @@
 //! Atlas constructs these strings everywhere — in [`crate::registry`]
 //! documents, in [`crate::transaction::TransferIntent`] payloads, in the
 //! official registry JSON, in test fixtures. Until now, the only check
-//! applied was "non-empty"; a typo like `eip-155:1` or `:1` would slip
+//! applied was "non-empty"; a typo like `eip_155:1` or `:1` would slip
 //! through to the chain service. Strict parsers at the typed-id boundary
 //! catch malformed input the moment the data is constructed or
 //! deserialised.
@@ -21,17 +21,23 @@
 //!
 //! [CAIP]: https://chainagnostic.org/caips/
 
-/// Validation rules per [CAIP-2].
+/// Validation rules per [CAIP-2]:
+///
+/// - `namespace: [-a-z0-9]{3,8}`
+/// - `reference: [-_a-zA-Z0-9]{1,32}`
+///
+/// The Solana mainnet id `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`
+/// sits exactly at the 32-character reference upper bound.
 ///
 /// [CAIP-2]: https://github.com/ChainAgnostic/CAIPs/blob/master/CAIPs/caip-2.md
 mod caip2_rules {
     pub const NAMESPACE_MIN: usize = 3;
     pub const NAMESPACE_MAX: usize = 8;
     pub const REFERENCE_MIN: usize = 1;
-    pub const REFERENCE_MAX: usize = 128;
+    pub const REFERENCE_MAX: usize = 32;
 
     pub fn is_namespace_char(c: char) -> bool {
-        c.is_ascii_lowercase() || c.is_ascii_digit()
+        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'
     }
 
     pub fn is_reference_char(c: char) -> bool {
@@ -334,9 +340,21 @@ mod tests {
     }
 
     #[test]
-    fn caip2_rejects_namespace_with_dash() {
+    fn caip2_accepts_namespace_with_dash() {
+        // CAIP-2 namespace charset is [-a-z0-9]; `eip-155` is
+        // syntactically valid (if hypothetical). Inverted from a
+        // previous rejection-test after a CodeRabbit review surfaced
+        // the spec divergence.
+        let c = Caip2::parse("eip-155:1").unwrap();
+        assert_eq!(c.namespace(), "eip-155");
+    }
+
+    #[test]
+    fn caip2_rejects_namespace_with_underscore() {
+        // `_` is not in the namespace charset — only `-`, lowercase
+        // letters, and digits qualify.
         assert!(matches!(
-            Caip2::parse("eip-155:1"),
+            Caip2::parse("eip_155:1"),
             Err(CaipError::SegmentInvalid {
                 segment: CaipSegment::Caip2Namespace,
                 ..
@@ -357,7 +375,8 @@ mod tests {
 
     #[test]
     fn caip2_rejects_reference_too_long() {
-        let long_ref = "a".repeat(129);
+        // CAIP-2 reference is at most 32 chars; 33 must be rejected.
+        let long_ref = "a".repeat(33);
         let input = format!("eip155:{long_ref}");
         assert!(matches!(
             Caip2::parse(&input),
@@ -370,7 +389,10 @@ mod tests {
 
     #[test]
     fn caip2_accepts_reference_at_max_length() {
-        let max_ref = "a".repeat(128);
+        // 32 chars exactly — Solana mainnet's reference happens to sit
+        // right at this boundary, so this test pins behaviour we rely
+        // on for the bundled official registry.
+        let max_ref = "a".repeat(32);
         let input = format!("eip155:{max_ref}");
         assert!(Caip2::parse(&input).is_ok());
     }
@@ -461,7 +483,7 @@ mod tests {
         // structural error — so callers can distinguish "bad chain"
         // from "bad asset".
         assert!(matches!(
-            Caip19::parse("eip-155:1/native:eth"),
+            Caip19::parse("eip_155:1/native:eth"),
             Err(CaipError::SegmentInvalid {
                 segment: CaipSegment::Caip2Namespace,
                 ..

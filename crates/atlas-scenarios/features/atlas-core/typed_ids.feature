@@ -11,7 +11,7 @@ Feature: CAIP-validated typed ids and chain-aware address validation
     Then the asset instance "eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" decomposes to network "eip155:8453", asset namespace "erc20", asset reference "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 
   Scenario: NetworkId construction rejects non-CAIP-2 input
-    When I try to construct a NetworkId from "eip-155:1"
+    When I try to construct a NetworkId from "eip_155:1"
     Then it surfaces a CAIP validation error
 
   Scenario: An EIP-55-checksummed EVM address validates against the EVM format

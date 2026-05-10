@@ -159,7 +159,7 @@ typed_id! {
 /// `"solana:5eykt4Us…vdp"` (Solana mainnet).
 ///
 /// Validates CAIP-2 shape at construction and on JSON deserialisation,
-/// rejecting typos like `eip-155:1`, `:1`, or `eip155:` before they
+/// rejecting typos like `eip_155:1`, `:1`, or `eip155:` before they
 /// reach the registry.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(transparent)]
@@ -426,7 +426,7 @@ mod tests {
         // serde_json now goes through the strict Deserialize impl.
         let valid: NetworkId = serde_json::from_str(r#""eip155:1""#).unwrap();
         assert_eq!(valid.as_str(), "eip155:1");
-        let err = serde_json::from_str::<NetworkId>(r#""eip-155:1""#).unwrap_err();
+        let err = serde_json::from_str::<NetworkId>(r#""eip_155:1""#).unwrap_err();
         assert!(err.to_string().contains("CAIP"));
     }
 
