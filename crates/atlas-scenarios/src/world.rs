@@ -27,6 +27,12 @@ pub struct AtlasWorld {
     /// Address of the most recently derived `LocalKeySigner`. Captured
     /// for assertion in signer scenarios.
     pub last_signer_address: Option<String>,
+    /// Outcome of the most recent `NetworkId::new` attempt. `Some(Ok)`
+    /// holds the constructed id; `Some(Err)` carries the typed
+    /// `IdError` for CAIP-validation scenarios.
+    pub last_network_id_result: Option<Result<atlas_core::id::NetworkId, atlas_core::id::IdError>>,
+    /// Outcome of the most recent `AddressRef::validate_for` call.
+    pub last_address_validation: Option<Result<(), atlas_core::address::AddressError>>,
 }
 
 impl AtlasWorld {

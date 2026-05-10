@@ -184,19 +184,10 @@ impl ChainService for MockEvmChainService {
     ) -> Result<BroadcastResult, ChainError> {
         // Static literal: `AddressRef::new` only rejects empty / whitespace.
         let sender = AddressRef::new("0xmocksender").expect("static literal is non-empty");
-        // Mock convention: derive the network from the CAIP-style asset
-        // instance id. `split_once('/')` returns None when the instance id
-        // has no `/` separator (a malformed input the registry would
-        // never produce, but tests can construct directly).
-        let (network_str, _) = intent
-            .asset_instance_id
-            .as_str()
-            .split_once('/')
-            .ok_or_else(|| {
-                ChainError::UnsupportedAssetInstance(intent.asset_instance_id.clone())
-            })?;
-        let network = NetworkId::new(network_str)
-            .map_err(|_| ChainError::UnsupportedAssetInstance(intent.asset_instance_id.clone()))?;
+        // `AssetInstanceId` is CAIP-19-validated at construction, so the
+        // chain segment is always present and CAIP-2-valid — pull it out
+        // via the typed accessor instead of re-parsing.
+        let network = intent.asset_instance_id.network_id();
 
         let nonce = self.get_nonce(&network, &sender).await?;
         let fee = self.estimate_fee(&intent, &sender).await?;
@@ -355,39 +346,10 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn transfer_with_malformed_instance_id_returns_unsupported_asset() {
-        // No `/` separator → split_once returns None → mapped to
-        // UnsupportedAssetInstance.
-        let svc = MockEvmChainService;
-        let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
-        let intent = TransferIntent {
-            asset_instance_id: AssetInstanceId::new("noslash").unwrap(),
-            to: AddressRef::new("0x0000000000000000000000000000000000000001").unwrap(),
-            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
-        };
-        let err = svc
-            .transfer(intent, AccountRef::from_str("account-1").unwrap(), &signer)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
-    }
-
-    #[tokio::test]
-    async fn transfer_with_empty_network_segment_returns_unsupported_asset() {
-        // Leading `/` → split_once succeeds with empty network_str →
-        // NetworkId::new fails → mapped to UnsupportedAssetInstance.
-        let svc = MockEvmChainService;
-        let signer = MockSigner::new(SignerId::from_str("mock-signer").unwrap());
-        let intent = TransferIntent {
-            asset_instance_id: AssetInstanceId::new("/native:eth").unwrap(),
-            to: AddressRef::new("0x0000000000000000000000000000000000000001").unwrap(),
-            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
-        };
-        let err = svc
-            .transfer(intent, AccountRef::from_str("account-1").unwrap(), &signer)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
-    }
+    // Note: tests that previously constructed `AssetInstanceId::new("noslash")`
+    // and `AssetInstanceId::new("/native:eth")` to exercise unreachable
+    // defensive code in `transfer` were removed when CAIP-19 validation
+    // landed at the `AssetInstanceId` construction boundary — the type
+    // now refuses those inputs, so the mock has no malformed-id branches
+    // left to test.
 }

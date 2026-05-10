@@ -27,6 +27,7 @@ async-trait         = "0.1"
 bip32               = "0.5"
 bip39               = "2"
 bolero              = "0.13"
+bs58                = "0.5"
 cucumber            = "0.22"
 eth-keystore        = "0.5"
 num-bigint          = { version = "0.4", features = ["serde"] }

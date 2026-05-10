@@ -5,6 +5,7 @@
 use alloy_provider::Provider;
 use async_trait::async_trait;
 use atlas_core::asset::AssetStandard;
+use atlas_core::chain::AddressFormat;
 use atlas_core::error::ChainError;
 use atlas_core::fee::EvmFee;
 use atlas_core::id::{AccountRef, AddressRef, NetworkId};
@@ -62,15 +63,25 @@ impl<P: Provider + Clone> EvmChainService<P> {
     where
         P: Send + Sync + 'static,
     {
-        let prefix = format!("{}/", self.network.as_str());
-        if !intent.asset_instance_id.as_str().starts_with(&prefix) {
+        // Reject intents that don't belong to this orchestrator's network.
+        // CAIP-19 already guarantees the asset instance has a CAIP-2 chain
+        // segment; here we just compare it against the bound network id.
+        if intent.asset_instance_id.network_id() != self.network {
             return Err(ChainError::UnsupportedAssetInstance(
                 intent.asset_instance_id,
             ));
         }
 
-        let sender = AddressRef::new(account.as_str())
-            .map_err(|e| ChainError::TransactionBuildFailed(e.to_string()))?;
+        // v1 contract: `account` carries an EVM address. Validate the
+        // recipient + sender against the chain's address format before
+        // doing any RPC work. EIP-55 mismatched-case input is rejected
+        // here, ahead of any nonce / fee fetch.
+        intent
+            .to
+            .validate_for(&AddressFormat::EvmAddress)
+            .map_err(|e| ChainError::InvalidAddress(e.to_string()))?;
+        let sender = AddressRef::for_format(account.as_str(), AddressFormat::EvmAddress)
+            .map_err(|e| ChainError::InvalidAddress(e.to_string()))?;
 
         let (nonce, fee) = tokio::try_join!(
             self.reader.get_nonce(&self.network, &sender),
@@ -90,7 +101,15 @@ impl<P: Provider + Clone> EvmChainService<P> {
             contract,
         })?;
 
-        let signing_request = self.codec.signing_request(&unsigned)?;
+        // `EvmCodec::signing_request` is total: it computes
+        // `keccak256(payload)` and returns Ok. The `?` desugar would
+        // leave the (unreachable) Err arm uncovered — use `.expect()`
+        // so the contract is explicit and there's no dead branch to
+        // trip coverage tooling.
+        let signing_request = self
+            .codec
+            .signing_request(&unsigned)
+            .expect("EvmCodec::signing_request is infallible");
         Ok(UnsignedBundle {
             unsigned,
             signing_request,
@@ -143,18 +162,18 @@ impl<P: Provider + Clone + Send + Sync + 'static> ChainService for EvmChainServi
 fn parse_standard_from_instance(
     intent: &TransferIntent,
 ) -> Result<(AssetStandard, Option<String>), ChainError> {
-    let id = intent.asset_instance_id.as_str();
-    if let Some((_, rest)) = id.split_once('/') {
-        if let Some(contract) = rest.strip_prefix("erc20:") {
-            return Ok((AssetStandard::Erc20, Some(contract.to_string())));
-        }
-        if rest.starts_with("native:") {
-            return Ok((AssetStandard::Native, None));
-        }
+    // `AssetInstanceId` is CAIP-19-validated at construction, so we can
+    // pull the `(asset_namespace, asset_reference)` decomposition via
+    // typed accessors and only have to switch on the namespace.
+    let namespace = intent.asset_instance_id.asset_namespace();
+    let reference = intent.asset_instance_id.asset_reference();
+    match namespace {
+        "erc20" => Ok((AssetStandard::Erc20, Some(reference.to_string()))),
+        "native" => Ok((AssetStandard::Native, None)),
+        _ => Err(ChainError::UnsupportedAssetInstance(
+            intent.asset_instance_id.clone(),
+        )),
     }
-    Err(ChainError::UnsupportedAssetInstance(
-        intent.asset_instance_id.clone(),
-    ))
 }
 
 #[cfg(test)]
@@ -194,14 +213,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn parse_standard_rejects_instance_without_slash() {
-        // The transfer() entrypoint guards against this with the
-        // network-prefix check, but parse_standard_from_instance is its
-        // own seam: a missing `/` falls through to UnsupportedAssetInstance.
-        let err = parse_standard_from_instance(&mk_intent("noslash")).unwrap_err();
-        assert!(matches!(err, ChainError::UnsupportedAssetInstance(_)));
-    }
+    // Note: a `parse_standard_rejects_instance_without_slash` test was
+    // dropped when CAIP-19 validation landed at the `AssetInstanceId`
+    // construction boundary — the type now refuses inputs without a
+    // `/` separator before they ever reach this function.
 
     #[test]
     fn parse_standard_rejects_unknown_segment() {
