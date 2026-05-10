@@ -280,6 +280,17 @@ mod tests {
     }
 
     #[test]
+    fn caip2_accepts_reference_with_dash_and_underscore() {
+        // Reference charset is [-_a-zA-Z0-9]; both `-` and `_` need
+        // to flow through `is_reference_char` so the short-circuit
+        // `||` branches are exercised.
+        let c = Caip2::parse("cosmos:cosmoshub-4").unwrap();
+        assert_eq!(c.reference(), "cosmoshub-4");
+        let c2 = Caip2::parse("foo:bar_baz").unwrap();
+        assert_eq!(c2.reference(), "bar_baz");
+    }
+
+    #[test]
     fn caip2_rejects_input_without_separator() {
         assert!(matches!(
             Caip2::parse("eip1551"),
@@ -313,7 +324,6 @@ mod tests {
 
     #[test]
     fn caip2_rejects_namespace_with_uppercase() {
-        // Namespace charset is [a-z0-9] only
         assert!(matches!(
             Caip2::parse("EIP155:1"),
             Err(CaipError::SegmentInvalid {
@@ -325,7 +335,6 @@ mod tests {
 
     #[test]
     fn caip2_rejects_namespace_with_dash() {
-        // CAIP-2 disallows `-` in namespace
         assert!(matches!(
             Caip2::parse("eip-155:1"),
             Err(CaipError::SegmentInvalid {
@@ -368,8 +377,8 @@ mod tests {
 
     #[test]
     fn caip2_rejects_reference_with_disallowed_char() {
-        // CAIP-2 reference allows [-_a-zA-Z0-9] only — `:` not allowed.
-        // (Actually `:` would be parsed as the separator, so use `/`.)
+        // CAIP-2 reference disallows `/`. (`:` would be the separator,
+        // so test `/` which survives split_once.)
         assert!(matches!(
             Caip2::parse("eip155:1/2"),
             Err(CaipError::SegmentInvalid {
@@ -407,6 +416,27 @@ mod tests {
             Caip19::parse("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/spl:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
                 .unwrap();
         assert_eq!(c.asset_namespace(), "spl");
+    }
+
+    #[test]
+    fn caip19_accepts_asset_namespace_with_dash() {
+        // Asset namespace charset is [-a-z0-9]; `-` needs an explicit
+        // input so the short-circuit branch in `is_namespace_char`
+        // gets exercised. Length max is 8, so we use `n-1` (3 chars).
+        let c = Caip19::parse("eip155:1/n-1:eth").unwrap();
+        assert_eq!(c.asset_namespace(), "n-1");
+    }
+
+    #[test]
+    fn caip19_accepts_asset_reference_with_dash_dot_and_percent() {
+        // Asset reference charset is [-.%a-zA-Z0-9]; exercise each of
+        // the three non-alphanumeric branches in `is_reference_char`.
+        let c1 = Caip19::parse("eip155:1/erc721:0xabc-1").unwrap();
+        assert_eq!(c1.asset_reference(), "0xabc-1");
+        let c2 = Caip19::parse("eip155:1/erc721:0xabc.1").unwrap();
+        assert_eq!(c2.asset_reference(), "0xabc.1");
+        let c3 = Caip19::parse("eip155:1/erc721:0xabc%201").unwrap();
+        assert_eq!(c3.asset_reference(), "0xabc%201");
     }
 
     #[test]
@@ -449,13 +479,6 @@ mod tests {
                 ..
             })
         ));
-    }
-
-    #[test]
-    fn caip19_accepts_asset_reference_with_dot_and_percent() {
-        // CAIP-19 asset reference allows [-.%a-zA-Z0-9]
-        let c = Caip19::parse("cosmos:cosmoshub-4/slip44:118").unwrap();
-        assert_eq!(c.asset_reference(), "118");
     }
 
     #[test]

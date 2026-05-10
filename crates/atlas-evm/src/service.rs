@@ -101,7 +101,15 @@ impl<P: Provider + Clone> EvmChainService<P> {
             contract,
         })?;
 
-        let signing_request = self.codec.signing_request(&unsigned)?;
+        // `EvmCodec::signing_request` is total: it computes
+        // `keccak256(payload)` and returns Ok. The `?` desugar would
+        // leave the (unreachable) Err arm uncovered — use `.expect()`
+        // so the contract is explicit and there's no dead branch to
+        // trip coverage tooling.
+        let signing_request = self
+            .codec
+            .signing_request(&unsigned)
+            .expect("EvmCodec::signing_request is infallible");
         Ok(UnsignedBundle {
             unsigned,
             signing_request,

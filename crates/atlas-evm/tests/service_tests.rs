@@ -178,3 +178,109 @@ async fn transfer_invalid_account_returns_invalid_address() {
     // InvalidAddress; the orchestrator forwards via tokio::try_join.
     assert!(matches!(err, ChainError::InvalidAddress(_)));
 }
+
+#[tokio::test]
+async fn transfer_with_mismatched_eip55_recipient_rejects_before_rpc() {
+    // Recipient address fails EIP-55 checksum — surfaces as
+    // InvalidAddress at the prepare_unsigned_bundle boundary, BEFORE
+    // any RPC call. We deliberately don't push any responses to the
+    // asserter; if the validation fails late (after nonce/fee fetch),
+    // the test will hang waiting for non-primed responses.
+    let asserter = Asserter::new();
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let signer = mk_signer();
+    let service = EvmChainService::new(provider, NetworkId::from_str("eip155:1").unwrap(), 1, true);
+
+    let intent = TransferIntent {
+        asset_instance_id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+        // Real EIP-55 form has lowercase `c`; flip to uppercase so the
+        // checksum mismatches.
+        to: AddressRef::from_str("0x833589FCD6eDb6E08f4c7C32D4f71b54bdA02913").unwrap(),
+        amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+    };
+    let account = AccountRef::from_str(&signer.address()).unwrap();
+    let err = service
+        .transfer(intent, account, &signer)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ChainError::InvalidAddress(_)), "got {err:?}");
+    assert!(format!("{err}").contains("EIP-55"));
+}
+
+#[tokio::test]
+async fn transfer_with_malformed_erc20_contract_propagates_codec_error() {
+    // ERC-20 with a non-hex contract address. The CAIP-19 reference
+    // charset accepts `bad-contract`, so AssetInstanceId is buildable;
+    // the codec then fails inside prepare_transfer when it tries to
+    // parse the contract as an Address. Exercises the `?` propagation
+    // from codec.prepare_transfer through prepare_unsigned_bundle.
+    let asserter = Asserter::new();
+    asserter.push_success(&alloy_primitives::U64::from(0u64));
+    asserter.push_success(&alloy_rpc_types_eth::FeeHistory {
+        base_fee_per_gas: vec![1_000_000_000u128, 1_000_000_000u128],
+        gas_used_ratio: vec![0.5],
+        base_fee_per_blob_gas: Vec::new(),
+        blob_gas_used_ratio: Vec::new(),
+        oldest_block: 1,
+        reward: Some(vec![vec![5_000_000u128]; 3]),
+    });
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let signer = mk_signer();
+    let service = EvmChainService::new(provider, NetworkId::from_str("eip155:1").unwrap(), 1, true);
+
+    let intent = TransferIntent {
+        asset_instance_id: AssetInstanceId::from_str("eip155:1/erc20:bad-contract").unwrap(),
+        to: AddressRef::from_str("0x0000000000000000000000000000000000000003").unwrap(),
+        amount: RawAmount::new(BigInt::from(1u64), 6).unwrap(),
+    };
+    let account = AccountRef::from_str(&signer.address()).unwrap();
+    let err = service
+        .transfer(intent, account, &signer)
+        .await
+        .unwrap_err();
+    // parse_address fails inside codec.prepare_transfer.
+    assert!(matches!(err, ChainError::InvalidAddress(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn assemble_and_broadcast_propagates_codec_assemble_error() {
+    // Drives the `?` desugar at the codec.assemble_signed call site
+    // inside assemble_and_broadcast — the broadcast path should never
+    // be reached when assemble fails. We feed a SubmittedTransaction
+    // response, which atlas-evm's codec rejects.
+    use atlas_core::signing::SigningResponse;
+    use atlas_core::transaction::UnsignedTransaction;
+
+    let asserter = Asserter::new();
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let service = EvmChainService::new(provider, NetworkId::from_str("eip155:1").unwrap(), 1, true);
+
+    let unsigned = UnsignedTransaction {
+        account: AccountRef::from_str("0x0000000000000000000000000000000000000001").unwrap(),
+        network: NetworkId::from_str("eip155:1").unwrap(),
+        intent: TransferIntent {
+            asset_instance_id: AssetInstanceId::from_str("eip155:1/native:eth").unwrap(),
+            to: AddressRef::from_str("0x0000000000000000000000000000000000000002").unwrap(),
+            amount: RawAmount::new(BigInt::from(1u64), 18).unwrap(),
+        },
+        payload: vec![0xde, 0xad],
+    };
+    let response = SigningResponse::SubmittedTransaction {
+        signer: SignerId::from_str("test").unwrap(),
+        tx_hash: "0xabc".to_string(),
+    };
+    let err = service
+        .assemble_and_broadcast(unsigned, response)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, ChainError::TransactionBuildFailed(_)),
+        "got {err:?}"
+    );
+}

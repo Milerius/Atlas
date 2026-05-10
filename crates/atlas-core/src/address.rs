@@ -151,12 +151,23 @@ mod tests {
     }
 
     #[test]
+    fn evm_accepts_all_uppercase_address() {
+        // All-uppercase carries no EIP-55 checksum information, so
+        // it's accepted as-is. Exercises the `has_upper && has_lower`
+        // false-branch (no `parse_checksummed` call).
+        let upper = "0x833589FCD6EDB6E08F4C7C32D4F71B54BDA02913";
+        let a = AddressRef::for_format(upper, AddressFormat::EvmAddress).unwrap();
+        assert_eq!(a.as_str(), upper);
+    }
+
+    #[test]
     fn evm_rejects_mismatched_checksum() {
         // Real EIP-55 form has uppercase `C` and lowercase `c`; flip
         // one to make the checksum invalid.
         let bad = "0x833589FCD6eDb6E08f4c7C32D4f71b54bdA02913";
         let err = AddressRef::for_format(bad, AddressFormat::EvmAddress).unwrap_err();
         assert!(matches!(err, AddressError::InvalidFormat { .. }));
+        assert!(format!("{err}").contains("EIP-55"));
     }
 
     #[test]
@@ -242,9 +253,8 @@ mod tests {
     #[test]
     fn solana_validation_rejects_evm_address() {
         // Cross-chain confusion the other way. EVM 0x-prefixed hex
-        // happens to base58-decode (the alphabet is permissive enough
-        // to accept the lowercase letters), so the rejection comes
-        // from the length check.
+        // happens to base58-decode, so the rejection comes from the
+        // length check.
         let err = AddressRef::for_format(EVM_LOWERCASE, AddressFormat::SolanaPubkey).unwrap_err();
         assert!(matches!(err, AddressError::InvalidFormat { .. }));
     }
