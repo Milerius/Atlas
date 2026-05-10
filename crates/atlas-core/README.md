@@ -1,8 +1,8 @@
 # atlas-core
 
-Boundary types and registry validation for the Atlas blockchain SDK.
+Boundary types, registry validation, and the per-chain trait surface for the Atlas blockchain SDK.
 
-Provides typed IDs, big-int raw amounts, split chain and asset registries, a provider-neutral signing trait, and a `ChainService` trait with a mock EVM implementation. No HTTP client, no real signing — those live in adapter crates that plug into the traits defined here.
+This crate is the cross-chain foundation: typed IDs, big-int raw amounts, split chain and asset registries, a provider-neutral signing trait, and the five-trait `ChainService` surface every per-chain crate plugs into. It has no HTTP client, no key material, no RLP encoder — those belong in the adapter crates ([`atlas-evm`](../atlas-evm), [`atlas-signer-localkey`](../atlas-signer-localkey), …).
 
 `#![forbid(unsafe_code)]`.
 
@@ -16,6 +16,7 @@ Provides typed IDs, big-int raw amounts, split chain and asset registries, a pro
                 │  • reject duplicate IDs (per collection)   │
                 │  • validate cross-references               │
                 │  • validate AssetInstance shape            │
+                │  • validate Network.native_asset_instance  │
                 └─────────────────────┬──────────────────────┘
                                       │ Registry
                                       │
@@ -31,198 +32,144 @@ Provides typed IDs, big-int raw amounts, split chain and asset registries, a pro
                                                   ┌────────────────┐
                                                   │ TransferIntent │
                                                   │ + AccountRef   │
-                                                  │ + NetworkId    │
                                                   └───────┬────────┘
                                                           │
                                                           ▼
-                                              ┌──────────────────────┐
-                                              │     ChainService     │
-                                              │                      │
-                                              │  prepare_transfer    │
-                                              │  signing_request     │── SigningRequest ─┐
-                                              │  assemble_signed     │◄── SigningResponse┘
-                                              │  broadcast           │
-                                              └──────────┬───────────┘
-                                                         │
-                                                         ▼
-                                                BroadcastResult
+        ┌─────────────────────── ChainService (5 traits) ─────────────────────┐
+        │                                                                     │
+        │   ChainCodec      ChainReader    FeeEstimator   ChainBroadcaster    │
+        │   (pure)          (RPC)          (RPC)          (RPC)               │
+        │       │              │              │              │                │
+        │       └──────────────┴───── ChainService ──────────┘                │
+        │                              │                                      │
+        │                              ▼                                      │
+        │                    SigningRequest ───► SignerProvider ─► Response   │
+        └─────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+                              BroadcastResult
 ```
 
-`AssetGroup` and `AssetInstrument` exist for display, search, pricing, routing, and aggregation. `AssetInstance` is the only thing that ever signs or broadcasts. The `ChainService` boundary refuses anything but a concrete instance whose ID belongs to the target network.
+`AssetGroup` and `AssetInstrument` exist for display, search, pricing, routing, and aggregation. `AssetInstance` is the only thing that ever signs or broadcasts. The codec refuses anything but a concrete instance whose ID belongs to the target network — `eip155:1` does not match `eip155:10/...`.
 
-## Core Traits
+## The five `ChainService` traits
 
-Two extension points, both `Send + Sync`:
+The transfer lifecycle is split into focused seams so a server can build offline, a client can sign with hardware/MPC, and any of the four sub-traits can be swapped in isolation.
 
-| Trait | Purpose | Implementations |
+| Trait | Surface | I/O |
 |---|---|---|
-| `ChainService` | Per-chain-family transaction lifecycle: prepare, signing-request, assemble, broadcast | `MockEvmService` (in-tree); real EVM / Solana / UTXO services TBD |
-| `SignerProvider` | Provider-neutral signing | `MockSigner` (in-tree); local-key / MPC / Privy / ERC-4337 adapters TBD |
+| `ChainCodec` | `prepare_transfer`, `signing_request`, `assemble_signed` | none — pure |
+| `ChainReader` | `get_balance`, `get_nonce`, `get_transaction_status` | RPC reads |
+| `FeeEstimator` | `estimate_fee` (returns `Self::Fee`) | RPC reads |
+| `ChainBroadcaster` | `broadcast` | RPC write |
+| `ChainService` | `transfer` (orchestrator) | composes all four |
 
-Signers may return any of three shapes — atlas-core does not force one custody model:
+Concrete implementations (real `EvmChainService`, in-tree `MockEvmChainService`) live in per-chain crates. `atlas-core` defines the surface and stops there.
+
+## Provider-neutral signing
+
+`SignerProvider::sign(SigningRequest) -> SigningResponse` covers MPC, local keys, Privy, hardware wallets, ERC-4337 — Atlas does not force one custody model:
 
 ```rust
 pub enum SigningResponse {
-    SignatureOnly      { signer, signature, public_key },  // raw sig — service assembles
+    SignatureOnly      { signer, signature, public_key },  // raw sig — codec assembles
     SignedTransaction  { signer, raw },                    // pre-encoded raw tx
     SubmittedTransaction { signer, tx_hash },              // signer broadcast itself
 }
 ```
 
-## Key Types
+`UnsignedBundle { unsigned, signing_request }` is the wire format for the server-builds / client-signs deployment topology. See [`atlas-evm`](../atlas-evm) for an end-to-end demonstration.
 
-### Identifiers
+## Key types
+
+### Identifiers (all reject empty/whitespace at construction)
 
 | Type | Purpose |
 |---|---|
-| `Id` | Internal non-empty string newtype — `Display`, `FromStr`, `Serialize`, `Deserialize` |
+| `Id` | Internal non-empty string newtype |
 | `ChainId` | Chain family ID (`evm`, `solana`, …) |
-| `NetworkId` | Concrete network — CAIP-2 form (`eip155:1`, `eip155:8453`) |
+| `NetworkId` | Concrete network — CAIP-2 form (`eip155:1`) |
 | `AssetGroupId` | Display-level group (`usdc`, `eth`) |
-| `AssetInstrumentId` | Issuer-level instrument (`usdc.circle`, `eth.native`) |
-| `AssetInstanceId` | Concrete on-chain instance — CAIP-19-ish (`eip155:8453/native:eth`) |
-| `SignerId` | Signer provider identifier |
-| `AccountRef` | Account identifier handed to chain services |
-| `AddressRef` | Recipient address (validation deferred — currently typed string) |
+| `AssetInstrumentId` | Issuer-level instrument (`usdc.circle`) |
+| `AssetInstanceId` | On-chain instance (`eip155:8453/native:eth`) |
+| `SignerId` / `AccountRef` / `AddressRef` | Signer / account / address handles |
 
-All typed IDs reject empty / whitespace-only input at construction (`IdError::Empty`).
-
-### Amounts
+### Money
 
 | Type | Purpose |
 |---|---|
-| `RawAmount` | Big-integer base-unit amount (`BigInt` + decimal scale). Fallible constructor rejects negatives. |
-| `AmountError` | `DecimalsMismatch { left, right }` and `NegativeValue` |
+| `RawAmount` | `BigInt` value + decimal scale. Constructor rejects negatives. |
+| `AmountError` | `DecimalsMismatch { left, right }` / `NegativeValue` |
 
-`RawAmount::checked_add` requires matching decimals and bypasses the sign check on the internal sum (non-negative + non-negative is non-negative).
+`f64` is forbidden for money — use `BigInt` for raw base units, `Decimal` for prices and rates.
 
-### Domain Models
+### Domain models
 
 | Type | Purpose |
 |---|---|
-| `Chain` | Chain family record — `id`, `family`, `address_format`, `default_curve`, `supported_standards`, `capabilities` |
-| `Network` | Concrete deployed network — `id`, `chain`, `environment`, `native_asset_instance_id`, `rpc`, `explorers`, `features` |
-| `AssetGroup` | Display-level grouping — `id`, `symbol`, `name`, `metadata` |
-| `AssetInstrument` | Issuer-level token shape — `id`, `group_id`, `asset_class`, `kind`, `decimals`, `traits`, `issuer` |
-| `AssetInstance` | Concrete on-chain instance — `id`, `instrument_id`, `network`, `standard`, `decimals`, `contract`, `capabilities` |
-
-`AssetInstance::validate_shape()` enforces:
-- `Native` standard must not have a contract
-- `Erc20` standard must have a non-empty contract
+| `Chain` | Chain family — `id`, `family`, `address_format`, `default_curve`, `supported_standards`, `capabilities`, `default_derivation_path` |
+| `Network` | Concrete deployed env — `id`, `chain`, `environment`, `native_asset_instance_id`, `rpc`, `explorers`, `features` |
+| `AssetGroup` | Display-level grouping |
+| `AssetInstrument` | Issuer-level token shape |
+| `AssetInstance` | Concrete on-chain instance — only thing that signs / broadcasts |
 
 ### Registries
 
-| Type | Purpose |
-|---|---|
-| `ChainRegistryDocument` | Versioned input: `version`, `chains`, `networks` |
-| `AssetRegistryDocument` | Versioned input: `version`, `asset_groups`, `asset_instruments`, `asset_instances` |
-| `Registry` | Validated, in-memory registry with typed lookups and group resolution |
-| `LATEST_REGISTRY_VERSION` | Currently `1` |
+`Registry::from_documents(chain_doc, asset_doc) -> Result<Registry, RegistryError>` rejects:
+- unknown versions (`UnsupportedVersion`)
+- duplicate IDs in any of the five collections
+- networks referencing a missing chain
+- instruments referencing a missing group
+- instances referencing a missing network or instrument
+- network native instances that don't exist or belong elsewhere
+- instances whose `(standard, contract)` shape fails `validate_shape`
 
-`Registry::from_documents` rejects:
-- unknown versions (`UnsupportedVersion { version }`)
-- duplicate IDs in any of the five collections (`InvalidReference { message: "duplicate <kind> id: …" }`)
-- networks that reference a missing chain
-- instruments that reference a missing group
-- instances that reference a missing network or instrument
-- network native instances that don't exist or belong to another network
-- instances whose shape fails `validate_shape`
+Lookup accessors return typed errors: `network`, `chain`, `asset_group`, `asset_instrument`, `asset_instance`, `asset_instances_for_group`.
 
 ### Transactions
 
 | Type | Purpose |
 |---|---|
 | `TransferIntent` | What the caller wants — concrete `AssetInstanceId`, `AddressRef`, `RawAmount` |
-| `UnsignedTransaction` | What the chain service produces — `account`, `network`, `intent`, opaque `payload` bytes |
-| `SignedTransaction` | Signed bytes ready to broadcast — `network`, `raw` |
-| `BroadcastResult` | `tx_hash` returned from broadcast |
-
-### Signing
-
-| Type | Purpose |
-|---|---|
-| `SignerRef` | Reference to a configured signer |
-| `SigningRequest` | What chain services hand to a signer — `account`, `network`, `curve`, `payload_kind`, `payload` |
-| `SigningPayloadKind` | `transaction_digest` / `unsigned_transaction` / `message` / `typed_data` |
-| `SigningResponse` | `signature_only` / `signed_transaction` / `submitted_transaction` |
+| `UnsignedTransaction` | Codec output — `account`, `network`, `intent`, opaque `payload` bytes |
+| `UnsignedBundle` | Wire format: `UnsignedTransaction` + pre-computed `SigningRequest` |
+| `SignedTransaction` | Broadcast-ready bytes |
+| `BroadcastResult` | `tx_hash` returned by the network |
 
 ### Errors
 
-Six typed error enums, each `Clone + Debug + Eq + PartialEq + thiserror::Error`:
+Six typed enums, each `Clone + Debug + Eq + PartialEq + thiserror::Error`:
 
 | Enum | Where it surfaces |
 |---|---|
 | `RegistryError` | Registry construction and lookup |
-| `AssetError` | Asset shape validation |
-| `ChainError` | Chain-service lifecycle (prepare / sign / broadcast) |
+| `AssetError` | `AssetInstance::validate_shape` |
+| `ChainError` | Chain-service lifecycle (prepare / sign / broadcast) — `#[from]` for `RpcError` and `SigningError` |
 | `SigningError` | Signer providers |
-| `RpcError` | RPC adapters (used by future real chain services) |
-| `AmountError` | Raw amount construction and arithmetic |
+| `RpcError` | Adapter RPC layer |
+| `AmountError` | `RawAmount` construction and arithmetic |
 
-## Usage
+## Embedded official registry
 
-```rust
-use atlas_core::{
-    amount::RawAmount,
-    id::{AccountRef, AddressRef, SignerId},
-    registry::{AssetRegistryDocument, ChainRegistryDocument, Registry},
-    service::{ChainService, MockEvmService},
-    signing::{MockSigner, SignerProvider},
-    transaction::TransferIntent,
-};
-use num_bigint::BigInt;
-use std::str::FromStr;
+`atlas_core::official::{CHAIN_REGISTRY_JSON, ASSET_REGISTRY_JSON}` ships Atlas's curated chain + asset set as `include_str!`-bundled JSON. Three networks (Ethereum, Base, Solana mainnet), three asset groups (`eth`, `usdc`, `sol`), six instances. Consumers can ignore it and bring their own JSON.
 
-let chain_doc: ChainRegistryDocument =
-    serde_json::from_str(include_str!("../tests/fixtures/chain_registry.valid.json"))?;
-let asset_doc: AssetRegistryDocument =
-    serde_json::from_str(include_str!("../tests/fixtures/asset_registry.valid.json"))?;
-let registry = Registry::from_documents(chain_doc, asset_doc)?;
-
-// Always resolve to a concrete instance before signing.
-let asset = registry.asset_instance("eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")?;
-let network = registry.network(asset.network.as_str())?;
-
-let service = MockEvmService;
-let signer  = MockSigner::new(SignerId::from_str("mock-signer")?);
-
-let intent = TransferIntent {
-    asset_instance_id: asset.id.clone(),
-    to:                AddressRef::from_str("0x0000000000000000000000000000000000000001")?,
-    amount:            RawAmount::new(BigInt::from(100_000_000u64), asset.decimals)?,
-};
-
-let unsigned = service.prepare_transfer(
-    AccountRef::from_str("account-1")?, network.id.clone(), intent,
-).await?;
-let request  = service.signing_request(&unsigned)?;
-let response = signer.sign(request).await?;
-let signed   = service.assemble_signed_transaction(unsigned, response)?;
-let result   = service.broadcast(signed).await?;
-```
-
-## Design Invariants
+## Design invariants
 
 - **`AssetInstance` is the only executable shape.** Calling a chain service with anything else is a type error, not a runtime error.
-- **Network prefix is path-segment exact.** `prepare_transfer` rejects an asset instance whose CAIP path begins with the network ID as a plain string prefix; the `/` separator must immediately follow the network ID. (`eip155:1` does not match `eip155:10/...`.)
-- **Registries reject unknown versions.** Forward-compat is opt-in via explicit version handling, not silent.
-- **Duplicate IDs are an error, not a last-write-wins.** Every collection in both registry documents is validated for uniqueness during construction.
-- **`f64` is forbidden for money.** Use `BigInt` for raw base units, `Decimal` for prices and rates.
-- **Signers may return any of three shapes.** Atlas-core does not force one custody model into a single response variant.
+- **Network prefix is path-segment exact.** The `/` separator must immediately follow the network ID.
+- **Registries reject unknown versions.** Forward-compat is opt-in.
+- **Duplicate IDs are an error**, not last-write-wins.
+- **`f64` is forbidden for money.**
+- **Signers may return any of three shapes.** Atlas-core does not force one custody model.
 - **No panics in SDK paths.** Typed error enums at every boundary.
 
 ## Testing
 
-47 tests covering:
-
-- Unit: every error path through `Registry::from_documents`, `AssetInstance::validate_shape`, `RawAmount`, typed IDs, `MockEvmService`, `MockSigner`, `SigningResponse` serde round-trip
-- Fixtures: valid, invalid-missing-network, invalid-native-with-contract registries (`tests/registry_validation.rs`)
-- Resolution: `asset_instances_for_group` and exact-instance lookup (`tests/asset_resolution.rs`)
-- Smoke: end-to-end registry → instance → mock sign → broadcast (`tests/smoke_flow.rs`)
-
 ```bash
-cargo test -p atlas-core --all-features
+cargo test -p atlas-core
 ```
+
+See [`tests/README.md`](tests/README.md) for the test layout.
 
 ## License
 

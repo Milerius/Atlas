@@ -15,7 +15,7 @@ use crate::{
     asset::{AssetGroup, AssetInstance, AssetInstrument},
     chain::{Chain, Network},
     error::RegistryError,
-    id::{AssetGroupId, AssetInstanceId, AssetInstrumentId, NetworkId},
+    id::{AssetGroupId, AssetInstanceId, AssetInstrumentId, ChainId, NetworkId},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -138,6 +138,18 @@ impl Registry {
     /// is empty.
     pub fn network(&self, id: &str) -> Result<&Network, RegistryError> {
         self.networks.get(id).ok_or_else(|| missing_network(id))
+    }
+
+    /// Look up a chain family by [`ChainId`]. Returns
+    /// [`RegistryError::MissingChain`] when the id isn't registered.
+    ///
+    /// Useful for reading family-level metadata such as the canonical
+    /// HD derivation path ([`Chain::default_derivation_path`]) before
+    /// initializing a signer.
+    pub fn chain(&self, id: &ChainId) -> Result<&Chain, RegistryError> {
+        self.chains
+            .get(id.as_str())
+            .ok_or_else(|| RegistryError::MissingChain(id.clone()))
     }
 
     /// Look up a display-level asset group by [`AssetGroupId`] string.
@@ -336,6 +348,7 @@ mod tests {
             default_curve: Curve::Secp256k1,
             supported_standards: vec!["native".to_string(), "erc20".to_string()],
             capabilities: vec![ChainCapability::Transfer],
+            default_derivation_path: Some("m/44'/60'/0'/0/0".to_string()),
         }
     }
 
@@ -592,6 +605,29 @@ mod tests {
         assert!(matches!(
             registry.asset_instances_for_group("ghost").unwrap_err(),
             RegistryError::MissingAssetGroup(_)
+        ));
+    }
+
+    #[test]
+    fn chain_lookup_returns_default_derivation_path() {
+        let registry = valid_registry();
+        let chain = registry
+            .chain(&ChainId::from_str("evm").unwrap())
+            .expect("evm chain present");
+        assert_eq!(
+            chain.default_derivation_path.as_deref(),
+            Some("m/44'/60'/0'/0/0")
+        );
+    }
+
+    #[test]
+    fn chain_lookup_misses_return_typed_error() {
+        let registry = valid_registry();
+        assert!(matches!(
+            registry
+                .chain(&ChainId::from_str("ghost").unwrap())
+                .unwrap_err(),
+            RegistryError::MissingChain(id) if id.as_str() == "ghost"
         ));
     }
 

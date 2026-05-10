@@ -8,7 +8,8 @@
       "addressFormat": "evm_address",
       "defaultCurve": "secp256k1",
       "supportedStandards": ["native", "erc20"],
-      "capabilities": ["balance", "transfer", "approve", "contract_call", "broadcast"]
+      "capabilities": ["balance", "transfer", "approve", "contract_call", "broadcast"],
+      "defaultDerivationPath": "m/44'/60'/0'/0/0"
     },
     {
       "id": "solana",
@@ -17,7 +18,8 @@
       "addressFormat": "solana_pubkey",
       "defaultCurve": "ed25519",
       "supportedStandards": ["native", "spl"],
-      "capabilities": ["balance", "transfer", "broadcast"]
+      "capabilities": ["balance", "transfer", "broadcast"],
+      "defaultDerivationPath": "m/44'/501'/0'/0'"
     }
   ],
   "networks": [

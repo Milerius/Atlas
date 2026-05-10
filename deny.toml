@@ -7,6 +7,14 @@ targets = [
 
 [advisories]
 yanked = "deny"
+ignore = [
+    # `paste` is unmaintained per the upstream README. Pulled in transitively
+    # via alloy-sol-types → ruint → paste. atlas-evm and atlas-signer-localkey
+    # only use it through alloy primitives; no direct call surface for us to
+    # audit. Replacement would require alloy upstream to drop or fork the
+    # dependency. Re-evaluate when alloy moves off it.
+    { id = "RUSTSEC-2024-0436", reason = "transitive via alloy-sol-types/ruint; no atlas surface; alloy controls the upgrade" },
+]
 
 [licenses]
 unused-allowed-license = "allow"
@@ -24,11 +32,20 @@ allow = [
     # Pulled in transitively via cucumber-codegen → synthez → synthez-{core,codegen}
     # in the atlas-scenarios BDD crate.
     "BlueOak-1.0.0",
+    # CC0-1.0 is FSF Free/Libre; pulled in transitively via crypto crates
+    # (notably tiny-keccak / coins-bip39 chain) that atlas-signer-localkey
+    # exercises. CC0 is functionally public domain — fully compatible with
+    # MIT and Apache-2.0.
+    "CC0-1.0",
 ]
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace crates (`atlas-{core,evm,signer-localkey,verify,scenarios}`)
+# cross-reference each other via path dependencies. cargo-deny's wildcard rule
+# is meant for crates.io-published crates; our internal workspace deps are
+# intentional and `allow-wildcard-paths` whitelists them.
 allow-wildcard-paths = true
 
 [sources]

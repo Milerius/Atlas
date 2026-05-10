@@ -42,6 +42,21 @@ pub struct Chain {
     /// [`crate::asset::AssetInstance::capabilities`].
     #[serde(default)]
     pub capabilities: Vec<ChainCapability>,
+    /// Canonical BIP-32 derivation path for the chain family's first
+    /// account (BIP-44 / SLIP-44 convention).
+    ///
+    /// Examples: `"m/44'/60'/0'/0/0"` for EVM (SLIP-44 coin type 60),
+    /// `"m/44'/501'/0'/0'"` for Solana (coin type 501). `None` for
+    /// chains where Atlas does not yet ship a recommended path.
+    ///
+    /// This is the path Atlas's HD signers use when no explicit override
+    /// is supplied — a registry-driven default rather than a value
+    /// hardcoded in each signer call site. Multi-account derivation
+    /// (varying the account index segment) is the caller's
+    /// responsibility for v1; a richer template type can be added later
+    /// if needed.
+    #[serde(default, rename = "defaultDerivationPath")]
+    pub default_derivation_path: Option<String>,
 }
 
 /// A concrete deployed network within a [`Chain`] family.
