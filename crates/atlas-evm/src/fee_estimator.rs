@@ -1,7 +1,26 @@
-//! `EvmFeeEstimator` — fee suggestion via `eth_feeHistory` + fallback.
+//! `EvmFeeEstimator` — fee suggestion delegated to alloy.
+//!
+//! Atlas previously hand-rolled a `eth_feeHistory`-based EIP-1559 estimator
+//! plus min/max priority-fee clamps. alloy 2.x ships the same algorithm in
+//! [`Provider::estimate_eip1559_fees`] (modelled after MetaMask's gas-fee
+//! controller, which is what most of the Rust EVM ecosystem already uses),
+//! so the estimator now wraps the alloy call and contributes only the
+//! Atlas-specific bits: the per-asset gas-floor selection and the
+//! [`EvmFee`] envelope shape.
+//!
+//! What remains here:
+//!
+//! - Gas-limit floor: 21_000 for native sends, 60_000 for ERC-20 (alloy
+//!   doesn't have a stance on what gas a wallet should put on a transfer
+//!   it hasn't seen the calldata for, and a real estimator is out of
+//!   scope for the codec seam).
+//! - Legacy-fee fallback via [`Provider::get_gas_price`] when
+//!   `Network.features.eip1559 == false` or alloy returns an error.
+//! - OP-Stack L1 fee oracle integration is still deferred — the
+//!   [`EvmFee::Eip1559::l1_fee_wei`] field stays `None`, matching the
+//!   `Provider::estimate_eip1559_fees` contract (which is L2-agnostic).
 
 use alloy_provider::Provider;
-use alloy_rpc_types_eth::BlockNumberOrTag;
 use async_trait::async_trait;
 use atlas_core::error::ChainError;
 use atlas_core::fee::EvmFee;
@@ -12,22 +31,22 @@ use num_bigint::BigInt;
 
 use crate::error::map_transport_err;
 
-/// Minimum priority fee in wei (0.001 gwei).
-const MIN_PRIORITY_FEE_WEI: u128 = 1_000_000;
-/// Maximum priority fee in wei (0.2 gwei).
-const MAX_PRIORITY_FEE_WEI: u128 = 200_000_000;
-/// Multiplier applied to baseFee when computing maxFeePerGas.
-const BASE_FEE_MULTIPLIER: u128 = 2;
-/// Default native-transfer gas limit (21000).
+/// Default native-transfer gas limit (21_000 — the EVM intrinsic cost
+/// of a value transfer with empty calldata).
 const NATIVE_TRANSFER_GAS_LIMIT: u64 = 21_000;
 /// Conservative ERC-20 transfer gas limit floor.
+///
+/// The standard `transfer(address,uint256)` typically uses 45_000–55_000
+/// gas; 60_000 leaves headroom for tokens with hooks (storage writes on
+/// first-time recipients, fee-on-transfer logic, etc.). Real estimation
+/// via `eth_estimateGas` against the actual contract is a follow-up.
 const ERC20_TRANSFER_GAS_LIMIT_FLOOR: u64 = 60_000;
 
 pub struct EvmFeeEstimator<P> {
     provider: P,
     /// Whether this network supports EIP-1559. Set at construction from
     /// `Network.features.eip1559`. When false, the estimator returns
-    /// `EvmFee::Legacy`.
+    /// [`EvmFee::Legacy`].
     pub eip1559: bool,
 }
 
@@ -46,7 +65,7 @@ impl<P: Provider + Clone> FeeEstimator for EvmFeeEstimator<P> {
         intent: &TransferIntent,
         _sender: &AddressRef,
     ) -> Result<EvmFee, ChainError> {
-        let gas_limit = if intent.asset_instance_id.as_str().contains("/erc20:") {
+        let gas_limit = if intent.asset_instance_id.asset_namespace() == "erc20" {
             ERC20_TRANSFER_GAS_LIMIT_FLOOR
         } else {
             NATIVE_TRANSFER_GAS_LIMIT
@@ -54,6 +73,9 @@ impl<P: Provider + Clone> FeeEstimator for EvmFeeEstimator<P> {
         if self.eip1559 {
             match self.eip1559_fee(gas_limit).await {
                 Ok(fee) => Ok(fee),
+                // Fall back to legacy if the alloy estimator can't get a
+                // base fee — pre-1559 networks, anvil with empty history,
+                // or transient RPC failures all surface here.
                 Err(_) => self.legacy_fee(gas_limit).await,
             }
         } else {
@@ -64,38 +86,19 @@ impl<P: Provider + Clone> FeeEstimator for EvmFeeEstimator<P> {
 
 impl<P: Provider + Clone> EvmFeeEstimator<P> {
     async fn eip1559_fee(&self, gas_limit: u64) -> Result<EvmFee, ChainError> {
-        let fh = self
+        // Delegate to alloy's default estimator. Internally it calls
+        // `eth_feeHistory(10, latest, [20.0])`, takes the median of
+        // non-zero priority-fee samples, and returns
+        // `max_fee_per_gas = base_fee * 2 + max_priority_fee_per_gas`.
+        // Same algorithm the MetaMask gas-fee controller uses.
+        let est = self
             .provider
-            .get_fee_history(10, BlockNumberOrTag::Latest, &[50.0])
+            .estimate_eip1559_fees()
             .await
             .map_err(map_transport_err)?;
-
-        let base_fee = fh.base_fee_per_gas.last().copied().ok_or_else(|| {
-            ChainError::FeeEstimationFailed("feeHistory returned empty baseFeePerGas".to_string())
-        })?;
-
-        let mut samples: Vec<u128> = fh
-            .reward
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|r| r.first().copied())
-            .filter(|&v| v > 0)
-            .collect();
-        samples.sort_unstable();
-        let suggested = samples
-            .get(samples.len() / 2)
-            .copied()
-            .unwrap_or(MIN_PRIORITY_FEE_WEI);
-
-        let max_priority = suggested.clamp(MIN_PRIORITY_FEE_WEI, MAX_PRIORITY_FEE_WEI);
-        let max_fee_candidate = base_fee
-            .saturating_mul(BASE_FEE_MULTIPLIER)
-            .saturating_add(max_priority);
-        let max_fee = max_fee_candidate.max(base_fee.saturating_add(max_priority));
-
         Ok(EvmFee::Eip1559 {
-            max_fee_per_gas: BigInt::from(max_fee),
-            max_priority_fee_per_gas: BigInt::from(max_priority),
+            max_fee_per_gas: BigInt::from(est.max_fee_per_gas),
+            max_priority_fee_per_gas: BigInt::from(est.max_priority_fee_per_gas),
             gas_limit,
             l1_fee_wei: None,
         })

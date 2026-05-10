@@ -52,7 +52,7 @@ Real EVM `ChainService` for the Atlas SDK, built on [alloy](https://github.com/a
 | `codec` | `EvmCodec` + `EvmPrepareContext`. Pure: builds RLP unsigned bytes for legacy + EIP-1559, computes keccak256 signing digest, assembles signed envelope from any `SigningResponse` shape. No `Provider`. |
 | `abi` | Hand-rolled `transfer(address,uint256)` ABI encoder. Avoids pulling `alloy-sol-types` into the build for a single 4-byte selector + two static encodes. |
 | `reader` | `EvmReader<P: Provider>` — native + ERC-20 balance, nonce, tx receipt → `TransactionStatus`. |
-| `fee_estimator` | `EvmFeeEstimator<P>` — `eth_feeHistory`-based EIP-1559 suggestion with median priority fee + clamping; legacy `eth_gasPrice` fallback. OP-Stack L1 fee oracle deferred (`l1_fee_wei: None` for now). |
+| `fee_estimator` | `EvmFeeEstimator<P>` — delegates EIP-1559 estimation to `Provider::estimate_eip1559_fees()` (alloy's MetaMask-modelled algorithm); legacy `eth_gasPrice` fallback. Atlas contributes the per-asset gas-floor selection and the `EvmFee` envelope shape. OP-Stack L1 fee oracle deferred (`l1_fee_wei: None` for now). |
 | `broadcaster` | `EvmBroadcaster<P>` — `eth_sendRawTransaction`. |
 | `service` | `EvmChainService<P>` — orchestrator. Exposes `prepare_unsigned_bundle` (server-side build), `assemble_and_broadcast` (client-side finalize), and `transfer` (composition). |
 | `mock` | `MockEvmChainService` — implements all 5 traits with deterministic `0xmock` output. Used by smoke tests and BDD scenarios; lets downstream consumers test integration without real RPC. |
@@ -92,7 +92,7 @@ The codec path is `Send + Sync` and pure; the only state crossing the wire is th
 | `keccak256`, `Address`, `B256`, `U256`, `Signature` | `alloy_primitives` |
 | `Provider` + `eth_*` JSON-RPC methods | `alloy_provider` |
 | ERC-20 `transfer(address,uint256)` calldata | hand-rolled ([`abi.rs`](src/abi.rs)) |
-| EIP-1559 fee estimation algorithm | hand-rolled (see [the trade-off note](src/fee_estimator.rs)) |
+| EIP-1559 fee estimation algorithm | `alloy_provider::Provider::estimate_eip1559_fees` |
 | Signing | atlas's `SignerProvider` (chain-agnostic) — alloy's `WalletFiller` is not used |
 
 ## Testing
