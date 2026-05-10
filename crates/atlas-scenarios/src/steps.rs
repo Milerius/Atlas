@@ -3,8 +3,10 @@
 //! Steps mutate the [`AtlasWorld`] via the helper methods defined in `world.rs`.
 
 use crate::world::{run_transfer_pipeline, AtlasWorld};
+use atlas_core::address::AddressError;
 use atlas_core::amount::RawAmount;
-use atlas_core::id::{ChainId, NetworkId, SignerId};
+use atlas_core::chain::AddressFormat;
+use atlas_core::id::{AddressRef, AssetInstanceId, ChainId, NetworkId, SignerId};
 use atlas_core::signing::MockSigner;
 use atlas_evm::mock::MockEvmChainService;
 use atlas_signer_localkey::LocalKeySigner;
@@ -196,4 +198,76 @@ pub fn assert_signer_address(world: &mut AtlasWorld, expected: String) {
     // Compare lowercased so the assertion is independent of EIP-55
     // checksum rendering — the underlying bytes are what matter.
     assert_eq!(actual.to_lowercase(), expected.to_lowercase());
+}
+
+// ── Typed ids: CAIP and address-format validation ──────────────────────────
+
+#[then(
+    regex = r#"^the asset instance "([^"]+)" decomposes to network "([^"]+)", asset namespace "([^"]+)", asset reference "([^"]+)"$"#
+)]
+pub fn assert_caip19_decomposition(
+    _world: &mut AtlasWorld,
+    instance_id: String,
+    expected_network: String,
+    expected_namespace: String,
+    expected_reference: String,
+) {
+    let id = AssetInstanceId::from_str(&instance_id)
+        .expect("scenario instance id must be CAIP-19 valid");
+    assert_eq!(id.network_id().as_str(), expected_network);
+    assert_eq!(id.asset_namespace(), expected_namespace);
+    assert_eq!(id.asset_reference(), expected_reference);
+}
+
+#[when(regex = r#"^I try to construct a NetworkId from "([^"]+)"$"#)]
+pub fn try_construct_network_id(world: &mut AtlasWorld, raw: String) {
+    world.last_network_id_result = Some(NetworkId::new(raw));
+}
+
+#[then("it surfaces a CAIP validation error")]
+pub fn assert_caip_validation_error(world: &mut AtlasWorld) {
+    let result = world
+        .last_network_id_result
+        .as_ref()
+        .expect("no NetworkId construction attempt captured");
+    let err = result.as_ref().expect_err("expected an error");
+    assert!(
+        matches!(err, atlas_core::id::IdError::Caip(_)),
+        "expected IdError::Caip, got {err:?}"
+    );
+}
+
+#[when(regex = r#"^I validate the address "([^"]+)" against the (EVM|Solana) format$"#)]
+pub fn validate_address_for_format(world: &mut AtlasWorld, raw: String, format_label: String) {
+    let format = match format_label.as_str() {
+        "EVM" => AddressFormat::EvmAddress,
+        "Solana" => AddressFormat::SolanaPubkey,
+        other => panic!("unknown address format label: {other}"),
+    };
+    let address = AddressRef::new(raw).expect("scenario address must be non-empty");
+    world.last_address_validation = Some(address.validate_for(&format));
+}
+
+#[then("validation succeeds")]
+pub fn assert_address_validation_succeeds(world: &mut AtlasWorld) {
+    let result = world
+        .last_address_validation
+        .as_ref()
+        .expect("no address validation captured");
+    result.as_ref().unwrap_or_else(|e| {
+        panic!("expected validation to succeed, got: {e:?}");
+    });
+}
+
+#[then("validation fails with an InvalidFormat error")]
+pub fn assert_address_validation_fails(world: &mut AtlasWorld) {
+    let result = world
+        .last_address_validation
+        .as_ref()
+        .expect("no address validation captured");
+    let err = result.as_ref().expect_err("expected an error");
+    assert!(
+        matches!(err, AddressError::InvalidFormat { .. }),
+        "expected AddressError::InvalidFormat, got {err:?}"
+    );
 }

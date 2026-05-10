@@ -860,7 +860,9 @@ dependencies = [
 name = "atlas-core"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "async-trait",
+ "bs58",
  "num-bigint",
  "num-traits",
  "rust_decimal",
@@ -900,6 +902,7 @@ dependencies = [
  "async-trait",
  "atlas-core",
  "atlas-evm",
+ "atlas-signer-localkey",
  "cucumber",
  "num-bigint",
  "serde_json",

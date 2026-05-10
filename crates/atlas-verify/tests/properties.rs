@@ -8,6 +8,7 @@
 
 use atlas_core::amount::{AmountError, RawAmount};
 use atlas_core::asset::{AssetCapability, AssetInstance, AssetMetadata, AssetStandard};
+use atlas_core::caip::{Caip19, Caip2};
 use atlas_core::id::{AssetInstanceId, AssetInstrumentId, Id, NetworkId};
 use bolero::check;
 use num_bigint::BigInt;
@@ -117,8 +118,12 @@ fn validate_shape_partition_is_total() {
                 1 => AssetStandard::Erc20,
                 _ => AssetStandard::Spl,
             };
+            // The asset id must be CAIP-19-shaped; the property under
+            // test exercises `validate_shape`, not id parsing, so we
+            // reuse a static valid id and let `standard` / `contract`
+            // vary across iterations.
             let instance = AssetInstance {
-                id: AssetInstanceId::new("eip155:1/test").unwrap(),
+                id: AssetInstanceId::new("eip155:1/native:eth").unwrap(),
                 instrument_id: AssetInstrumentId::new("test").unwrap(),
                 network: NetworkId::new("eip155:1").unwrap(),
                 standard,
@@ -139,4 +144,65 @@ fn validate_shape_partition_is_total() {
             }
         },
     );
+}
+
+// ── CAIP parsers ───────────────────────────────────────────────────────────
+
+/// `Caip2` parses iff the input matches `<namespace>:<reference>` with both
+/// segments respecting the CAIP-2 character classes and length bounds. When
+/// it parses, `Display` round-trips back to the original input verbatim.
+#[test]
+fn caip2_round_trips_through_display() {
+    check!().with_type::<String>().for_each(|s: &String| {
+        if let Ok(c) = Caip2::parse(s) {
+            assert_eq!(format!("{c}"), *s);
+        }
+    });
+}
+
+/// `Caip19` parses iff the chain segment is a valid Caip2 *and* the asset
+/// segment matches `<asset_namespace>:<asset_reference>`. When it parses,
+/// the typed accessors agree with the Display round-trip.
+#[test]
+fn caip19_round_trips_through_display() {
+    check!().with_type::<String>().for_each(|s: &String| {
+        if let Ok(c) = Caip19::parse(s) {
+            // Display must reconstruct the canonical form
+            let display = format!("{c}");
+            assert_eq!(
+                display,
+                format!(
+                    "{}/{}:{}",
+                    c.network(),
+                    c.asset_namespace(),
+                    c.asset_reference()
+                )
+            );
+            // Any string that parses must contain the separators in order
+            assert!(display.contains(':'));
+            assert!(display.contains('/'));
+        }
+    });
+}
+
+/// Strict construction agrees: a string parses as `Caip2` iff
+/// `NetworkId::new` accepts it.
+#[test]
+fn caip2_parser_agrees_with_network_id_constructor() {
+    check!().with_type::<String>().for_each(|s: &String| {
+        let caip_ok = Caip2::parse(s).is_ok();
+        let id_ok = NetworkId::new(s.clone()).is_ok();
+        assert_eq!(caip_ok, id_ok);
+    });
+}
+
+/// Strict construction agrees: a string parses as `Caip19` iff
+/// `AssetInstanceId::new` accepts it.
+#[test]
+fn caip19_parser_agrees_with_asset_instance_id_constructor() {
+    check!().with_type::<String>().for_each(|s: &String| {
+        let caip_ok = Caip19::parse(s).is_ok();
+        let id_ok = AssetInstanceId::new(s.clone()).is_ok();
+        assert_eq!(caip_ok, id_ok);
+    });
 }

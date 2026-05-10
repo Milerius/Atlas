@@ -14,21 +14,47 @@ the engineering rules every change must obey, see [`CODEX.md`](CODEX.md) /
 
 | Area | State |
 |---|---|
-| `atlas-core` | Typed IDs, big-int amounts, error enums, chain/asset domain models, split registry with validation, provider-neutral signing trait, 5-trait `ChainService` surface (`ChainCodec` / `ChainReader` / `FeeEstimator` / `ChainBroadcaster` / `ChainService`), `UnsignedBundle` wire type for split-host deployments, `Chain.default_derivation_path` + `Registry::chain()` for registry-driven HD paths |
+| `atlas-core` | Typed IDs, big-int amounts, error enums, chain/asset domain models, split registry with validation, provider-neutral signing trait, 5-trait `ChainService` surface (`ChainCodec` / `ChainReader` / `FeeEstimator` / `ChainBroadcaster` / `ChainService`), `UnsignedBundle` wire type for split-host deployments, `Chain.default_derivation_path` + `Registry::chain()` for registry-driven HD paths, **CAIP-2 / CAIP-19 typed parsers + structured accessors on `NetworkId` / `AssetInstanceId`**, **chain-aware `AddressRef` validation** (EIP-55 EVM + base58 Solana) |
 | `atlas-evm` | Real EVM `ChainService` on alloy 2.x — RLP codec (legacy + EIP-1559), `eth_getBalance`/`eth_getTransactionCount`/`eth_getTransactionReceipt` reader, `eth_feeHistory`-based fee estimator, `eth_sendRawTransaction` broadcaster, orchestrator with `prepare_unsigned_bundle` / `assemble_and_broadcast` for server-builds / client-signs flows. In-tree `MockEvmChainService` for smoke tests + BDD |
 | `atlas-signer-localkey` | secp256k1 reference signer with three construction paths: raw bytes, Web3 secret-storage JSON keystore, BIP-39 mnemonic + BIP-32 derivation. Path read from `Chain.default_derivation_path` rather than hardcoded |
-| `atlas-verify` | Bolero properties (6), Kani proof scaffold (3 nightly proofs) |
-| `atlas-scenarios` | Cucumber BDD scenarios (3 features, 9 scenarios, 35 steps) including registry-driven signer wiring |
+| `atlas-verify` | Bolero properties (10), Kani proof scaffold (3 nightly proofs) |
+| `atlas-scenarios` | Cucumber BDD scenarios (4 features, 14 scenarios, 45 steps) covering registry resolution, mock transfer flow, registry-driven signer wiring, and CAIP / address-format validation |
 | Official registry | Ethereum mainnet, Base mainnet, Solana mainnet · native ETH/SOL · Circle USDC across all 3 networks · embedded into atlas-core via `atlas_core::official` · EVM `defaultDerivationPath` = `m/44'/60'/0'/0/0`, Solana = `m/44'/501'/0'/0'` |
 | Asset standards | `Native`, `Erc20`, `Spl` |
 | Coverage | **99.80% line** workspace (every file ≥ 99% lines), 99.51% function — atlas-scenarios excluded; codecov target pinned at 95% |
-| Tests | 162 across the workspace, plus 9 BDD scenarios |
+| Tests | 208 across the workspace, plus 14 BDD scenarios |
 | CI | fmt · clippy (Linux+macOS) · test (Linux+macOS) · BDD · doc (`-D warnings`) · WASM build · `cargo deny` · `cargo careful` · coverage · codecov patch + project |
 | Nightly | mutation testing · Kani proofs · Bolero extended (100k iter) · full HTML coverage |
 
 ---
 
 ## Recently shipped
+
+### `AddressRef` validation + CAIP-2 / CAIP-19 typed parsers
+
+- New `atlas_core::caip` module: `Caip2`, `Caip19`, `CaipError`, plus
+  the `CaipSegment` tag for source-of-error attribution.
+- `NetworkId::new` and `AssetInstanceId::new` now reject non-CAIP-2 /
+  non-CAIP-19 input (typos like `eip-155:1`, `:1`, `eip155:1/eth`
+  surface as `IdError::Caip(...)`). Custom `Deserialize` impls run the
+  same validation on JSON load, so registry documents are checked at
+  the document boundary.
+- Typed accessors: `NetworkId::namespace` / `reference` / `caip2`,
+  `AssetInstanceId::network_id` / `asset_namespace` /
+  `asset_reference` / `caip19` — call sites no longer re-split the
+  string at every read.
+- New `atlas_core::address` module: `AddressError`,
+  `AddressRef::validate_for(&AddressFormat)`,
+  `AddressRef::for_format(&str, AddressFormat)`. EVM uses
+  `alloy_primitives::Address` plus explicit `0x` requirement and
+  EIP-55 enforcement on mixed-case input. Solana uses base58 +
+  exact 32-byte length. `EvmChainService::prepare_unsigned_bundle`
+  validates both `intent.to` and the v1-derived sender against
+  `AddressFormat::EvmAddress` before any RPC.
+- Ripple effects: the mock service's defensive parsing of malformed
+  ids was removed — the type system now refuses those inputs upstream.
+- 4 Bolero properties on parser round-trip + parser/constructor agreement.
+- 1 BDD feature, 5 scenarios.
 
 ### Real EVM `ChainService` + `LocalKeySigner` — PR [#9](https://github.com/Milerius/Atlas/pull/9), 2026-05-10
 
@@ -52,23 +78,6 @@ atlas-core now ships only the trait surface.
 ---
 
 ## Near-term (next 1–3 PRs)
-
-### `AddressRef` validation
-
-- EIP-55 checksum for EVM addresses.
-- Base58 + length check for Solana pubkeys.
-- Chain-aware validation at boundary call sites (e.g. `prepare_transfer`).
-
-`AddressRef` is a typed string today; this PR makes it actually validate.
-Probably fits in ~150 LOC + property tests. Closes a typed-string gap that
-predates the EVM service work.
-
-### CAIP-2 / CAIP-19 typed parsers
-
-Promote `NetworkId` and `AssetInstanceId` from CAIP-shaped strings to
-structured `(namespace, reference)` decomposition. Catches malformed ids at
-the registry boundary, adds Bolero property tests for parser round-trips.
-Pairs naturally with the AddressRef PR — both tighten the typed-id boundary.
 
 ### OP-Stack L1 fee oracle
 

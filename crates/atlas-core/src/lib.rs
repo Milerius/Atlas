@@ -37,8 +37,10 @@
 //! panics in SDK paths. The crate is `#![forbid(unsafe_code)]`.
 #![forbid(unsafe_code)]
 
+pub mod address;
 pub mod amount;
 pub mod asset;
+pub mod caip;
 pub mod chain;
 pub mod error;
 pub mod fee;
@@ -49,6 +51,8 @@ pub mod service;
 pub mod signing;
 pub mod transaction;
 
+pub use address::AddressError;
 pub use amount::{AmountError, RawAmount};
+pub use caip::{Caip19, Caip2, CaipError};
 pub use error::{AssetError, ChainError, RegistryError, RpcError, SigningError};
 pub use fee::{EvmFee, Fee, TransactionStatus};

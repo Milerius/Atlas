@@ -88,11 +88,15 @@ pub enum SigningResponse {
 |---|---|
 | `Id` | Internal non-empty string newtype |
 | `ChainId` | Chain family ID (`evm`, `solana`, …) |
-| `NetworkId` | Concrete network — CAIP-2 form (`eip155:1`) |
+| `NetworkId` | Concrete network — strict [CAIP-2] form (`eip155:1`); typed accessors `namespace()` / `reference()` / `caip2()` |
 | `AssetGroupId` | Display-level group (`usdc`, `eth`) |
 | `AssetInstrumentId` | Issuer-level instrument (`usdc.circle`) |
-| `AssetInstanceId` | On-chain instance (`eip155:8453/native:eth`) |
-| `SignerId` / `AccountRef` / `AddressRef` | Signer / account / address handles |
+| `AssetInstanceId` | On-chain instance — strict [CAIP-19] form (`eip155:8453/native:eth`); typed accessors `network_id()` / `asset_namespace()` / `asset_reference()` / `caip19()` |
+| `SignerId` / `AccountRef` | Signer / account handles |
+| `AddressRef` | Recipient address — chain-agnostic at construction; `validate_for(&AddressFormat)` and strict `for_format(&str, AddressFormat)` enforce per-chain format (EIP-55 for EVM, base58 + length for Solana) |
+
+[CAIP-2]: https://github.com/ChainAgnostic/CAIPs/blob/master/CAIPs/caip-2.md
+[CAIP-19]: https://github.com/ChainAgnostic/CAIPs/blob/master/CAIPs/caip-19.md
 
 ### Money
 
