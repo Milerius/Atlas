@@ -17,18 +17,39 @@ the engineering rules every change must obey, see [`CODEX.md`](CODEX.md) /
 | `atlas-core` | Typed IDs, big-int amounts, error enums, chain/asset domain models, split registry with validation, provider-neutral signing trait, 5-trait `ChainService` surface (`ChainCodec` / `ChainReader` / `FeeEstimator` / `ChainBroadcaster` / `ChainService`), `UnsignedBundle` wire type for split-host deployments, `Chain.default_derivation_path` + `Registry::chain()` for registry-driven HD paths, **CAIP-2 / CAIP-19 typed parsers + structured accessors on `NetworkId` / `AssetInstanceId`**, **chain-aware `AddressRef` validation** (EIP-55 EVM + base58 Solana) |
 | `atlas-evm` | Real EVM `ChainService` on alloy 2.x — RLP codec (legacy + EIP-1559), `eth_getBalance`/`eth_getTransactionCount`/`eth_getTransactionReceipt` reader, `eth_feeHistory`-based fee estimator, `eth_sendRawTransaction` broadcaster, orchestrator with `prepare_unsigned_bundle` / `assemble_and_broadcast` for server-builds / client-signs flows. In-tree `MockEvmChainService` for smoke tests + BDD |
 | `atlas-signer-localkey` | secp256k1 reference signer with three construction paths: raw bytes, Web3 secret-storage JSON keystore, BIP-39 mnemonic + BIP-32 derivation. Path read from `Chain.default_derivation_path` rather than hardcoded |
-| `atlas-verify` | Bolero properties (10), Kani proof scaffold (3 nightly proofs) |
+| `atlas-verify` | Bolero properties (13: 10 on atlas-core invariants, 3 on atlas-evm codec round-trips), Kani proof scaffold (3 nightly proofs) |
 | `atlas-scenarios` | Cucumber BDD scenarios (4 features, 14 scenarios, 45 steps) covering registry resolution, mock transfer flow, registry-driven signer wiring, and CAIP / address-format validation |
 | Official registry | Ethereum mainnet, Base mainnet, Solana mainnet · native ETH/SOL · Circle USDC across all 3 networks · embedded into atlas-core via `atlas_core::official` · EVM `defaultDerivationPath` = `m/44'/60'/0'/0/0`, Solana = `m/44'/501'/0'/0'` |
 | Asset standards | `Native`, `Erc20`, `Spl` |
 | Coverage | **99.80% line** workspace (every file ≥ 99% lines), 99.51% function — atlas-scenarios excluded; codecov target pinned at 95% |
-| Tests | 208 across the workspace, plus 14 BDD scenarios |
+| Tests | 217 across the workspace, plus 14 BDD scenarios |
 | CI | fmt · clippy (Linux+macOS) · test (Linux+macOS) · BDD · doc (`-D warnings`) · WASM build · `cargo deny` · `cargo careful` · coverage · codecov patch + project |
 | Nightly | mutation testing · Kani proofs · Bolero extended (100k iter) · full HTML coverage |
 
 ---
 
 ## Recently shipped
+
+### EIP-1559 fee estimator delegated to alloy + Bolero properties on `EvmCodec`
+
+- `EvmFeeEstimator::estimate_fee` now wraps
+  [`Provider::estimate_eip1559_fees`](https://docs.rs/alloy-provider/2.0.4/alloy_provider/trait.Provider.html#method.estimate_eip1559_fees)
+  for the EIP-1559 path. alloy ships the same `eth_feeHistory`-based
+  algorithm we hand-rolled (modelled after MetaMask's gas-fee
+  controller), so atlas-evm contributes only the per-asset gas floor
+  and the `EvmFee` envelope shape — about 50 lines of bespoke fee math
+  retired.
+- Behavioural delta: alloy's defaults use a 20th-percentile reward
+  (vs our previous 50th) and a 1-wei priority floor with no upper
+  cap (vs our 0.001–0.2 gwei clamp). Same algorithm, slightly
+  different defaults. Atlas's old opinionated bounds are gone — we now
+  inherit alloy's, in line with the rest of the Rust EVM ecosystem.
+- New Bolero property suite at
+  [`crates/atlas-verify/tests/evm_codec_properties.rs`](crates/atlas-verify/tests/evm_codec_properties.rs):
+  three round-trip properties (native EIP-1559, native legacy, ERC-20)
+  generate `(chain_id, nonce, gas, fee, recipient, value)` tuples and
+  assert every field decodes back through `alloy_consensus`'s reference
+  decoders — bit-equivalence pinned across Bolero's input space.
 
 ### `AddressRef` validation + CAIP-2 / CAIP-19 typed parsers
 
@@ -212,13 +233,6 @@ Roadmap items that aren't yet specced — open for prioritization:
 - Codec-only feature gate on `atlas-evm` (or a sister crate `atlas-evm-codec`)
   so server-side build-without-RPC consumers don't pull `alloy-provider`'s
   HTTP deps. The codec module is already pure; this is just packaging.
-- **Replace the hand-rolled fee estimator with `Provider::estimate_eip1559_fees()`** —
-  alloy 2.x exposes the same `eth_feeHistory`-based algorithm we wrote by
-  hand in [`crates/atlas-evm/src/fee_estimator.rs`](crates/atlas-evm/src/fee_estimator.rs). Drops ~50 LOC, keeps the
-  `EvmFee::Eip1559` shape and per-asset gas floor logic.
-- Bolero property tests over `EvmCodec::prepare_transfer` round-trips —
-  generate `(intent, fee, standard, contract)` quads, encode, decode through
-  alloy, recover sender, assert equality.
 - Token list snapshot under `registries/tokens/` for community-curated extras.
 - BDD scenarios that exercise multi-network flows (e.g. "USDC on Base ↔
   USDC on Ethereum") and split-host build/sign through the real

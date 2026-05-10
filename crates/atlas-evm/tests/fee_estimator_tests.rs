@@ -1,4 +1,10 @@
 //! Tests for `EvmFeeEstimator` against a mocked alloy provider.
+//!
+//! Since the EIP-1559 path now delegates to
+//! [`alloy_provider::Provider::estimate_eip1559_fees`] (modelled after
+//! MetaMask's gas-fee controller), the tests assert the alloy contract
+//! end-to-end rather than re-checking median/clamp arithmetic that lives
+//! upstream.
 
 use alloy_provider::mock::Asserter;
 use alloy_provider::ProviderBuilder;
@@ -12,8 +18,6 @@ use atlas_evm::fee_estimator::EvmFeeEstimator;
 use num_bigint::BigInt;
 use std::str::FromStr;
 
-const MIN_PRIORITY_FEE_WEI: u128 = 1_000_000;
-const MAX_PRIORITY_FEE_WEI: u128 = 200_000_000;
 const SENDER: &str = "0x39fa8c5f2793459d6622857e7d9fbb4bd91766d3";
 
 fn native_intent() -> TransferIntent {
@@ -36,81 +40,17 @@ fn erc20_intent() -> TransferIntent {
 }
 
 #[tokio::test]
-async fn eip1559_fee_uses_median_priority_clamped_to_min() {
+async fn eip1559_fee_returns_alloy_default_for_typical_inputs() {
+    // alloy's default estimator: max_priority = median(non_zero_rewards),
+    // bumped up to a 1-wei floor; max_fee = base_fee * 2 + max_priority.
+    // Median of [5, 5, 5, 5, 5] = 5; with base_fee = 1 gwei, the result is
+    // max_priority = 5_000_000 wei, max_fee = 2_000_000_005 wei.
     let asserter = Asserter::new();
     let provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
 
-    // Median of [1, 2, 3] = 2 wei, far below MIN_PRIORITY_FEE_WEI (1_000_000).
-    asserter.push_success(&FeeHistory {
-        base_fee_per_gas: vec![100_000_000_000u128, 100_000_000_000u128],
-        gas_used_ratio: vec![0.5],
-        base_fee_per_blob_gas: Vec::new(),
-        blob_gas_used_ratio: Vec::new(),
-        oldest_block: 1,
-        reward: Some(vec![vec![1u128], vec![2u128], vec![3u128]]),
-    });
-
-    let estimator = EvmFeeEstimator::new(provider, true);
-    let fee = estimator
-        .estimate_fee(&native_intent(), &AddressRef::from_str(SENDER).unwrap())
-        .await
-        .unwrap();
-    match fee {
-        EvmFee::Eip1559 {
-            max_priority_fee_per_gas,
-            ..
-        } => {
-            assert_eq!(max_priority_fee_per_gas, BigInt::from(MIN_PRIORITY_FEE_WEI));
-        }
-        other => panic!("expected EIP-1559, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn eip1559_fee_uses_median_priority_clamped_to_max() {
-    let asserter = Asserter::new();
-    let provider = ProviderBuilder::new()
-        .disable_recommended_fillers()
-        .connect_mocked_client(asserter.clone());
-
-    // Median (10 GWEI) is far above MAX (0.2 GWEI).
-    let huge: u128 = 10_000_000_000;
-    asserter.push_success(&FeeHistory {
-        base_fee_per_gas: vec![100u128, 100u128],
-        gas_used_ratio: vec![0.5],
-        base_fee_per_blob_gas: Vec::new(),
-        blob_gas_used_ratio: Vec::new(),
-        oldest_block: 1,
-        reward: Some(vec![vec![huge], vec![huge], vec![huge]]),
-    });
-
-    let estimator = EvmFeeEstimator::new(provider, true);
-    let fee = estimator
-        .estimate_fee(&native_intent(), &AddressRef::from_str(SENDER).unwrap())
-        .await
-        .unwrap();
-    match fee {
-        EvmFee::Eip1559 {
-            max_priority_fee_per_gas,
-            ..
-        } => {
-            assert_eq!(max_priority_fee_per_gas, BigInt::from(MAX_PRIORITY_FEE_WEI));
-        }
-        other => panic!("expected EIP-1559, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn eip1559_fee_max_fee_is_base_times_multiplier_plus_priority() {
-    let asserter = Asserter::new();
-    let provider = ProviderBuilder::new()
-        .disable_recommended_fillers()
-        .connect_mocked_client(asserter.clone());
-
-    let base_fee: u128 = 50_000_000_000;
-    // Pick a priority value well within [MIN, MAX] so it isn't clamped.
+    let base_fee: u128 = 1_000_000_000;
     let priority: u128 = 5_000_000;
     asserter.push_success(&FeeHistory {
         base_fee_per_gas: vec![base_fee, base_fee],
@@ -133,10 +73,9 @@ async fn eip1559_fee_max_fee_is_base_times_multiplier_plus_priority() {
             gas_limit,
             l1_fee_wei,
         } => {
-            // base_fee_per_gas.last() is the next-block base. multiplier=2.
-            let expected = BigInt::from(base_fee * 2 + priority);
-            assert_eq!(max_fee_per_gas, expected);
             assert_eq!(max_priority_fee_per_gas, BigInt::from(priority));
+            // alloy: max_fee = base * 2 + priority
+            assert_eq!(max_fee_per_gas, BigInt::from(base_fee * 2 + priority));
             assert_eq!(gas_limit, 21_000);
             assert_eq!(l1_fee_wei, None);
         }
@@ -145,15 +84,57 @@ async fn eip1559_fee_max_fee_is_base_times_multiplier_plus_priority() {
 }
 
 #[tokio::test]
-async fn eip1559_fee_falls_back_to_legacy_when_fee_history_empty() {
+async fn eip1559_fee_uses_alloy_min_priority_when_rewards_are_zero() {
+    // When `eth_feeHistory` returns all-zero priority-fee samples, alloy
+    // falls back to a 1-wei minimum (its EIP1559_MIN_PRIORITY_FEE
+    // constant). This pins that contract — Atlas no longer enforces its
+    // own opinionated 0.001-gwei floor.
     let asserter = Asserter::new();
     let provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
 
-    // Empty base_fee_per_gas triggers the FeeEstimationFailed error in
-    // eip1559_fee, which then falls back to legacy_fee.
+    asserter.push_success(&FeeHistory {
+        base_fee_per_gas: vec![100_000_000_000u128, 100_000_000_000u128],
+        gas_used_ratio: vec![0.5],
+        base_fee_per_blob_gas: Vec::new(),
+        blob_gas_used_ratio: Vec::new(),
+        oldest_block: 1,
+        reward: Some(vec![vec![0u128]; 3]),
+    });
+
+    let estimator = EvmFeeEstimator::new(provider, true);
+    let fee = estimator
+        .estimate_fee(&native_intent(), &AddressRef::from_str(SENDER).unwrap())
+        .await
+        .unwrap();
+    match fee {
+        EvmFee::Eip1559 {
+            max_priority_fee_per_gas,
+            ..
+        } => {
+            assert_eq!(max_priority_fee_per_gas, BigInt::from(1u64));
+        }
+        other => panic!("expected EIP-1559, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn eip1559_fee_falls_back_to_legacy_when_fee_history_returns_no_base_fee() {
+    // alloy's `estimate_eip1559_fees` falls back to `eth_getBlockByNumber`
+    // when feeHistory produces no usable base fee. We make both fail so
+    // the outer match in our estimator drops to legacy_fee, which calls
+    // `eth_gasPrice`.
+    let asserter = Asserter::new();
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter.clone());
+
     asserter.push_success(&FeeHistory::default());
+    // alloy's fallback fetches a block; making it fail flushes us into
+    // the outer Err arm.
+    asserter.push_failure_msg("no block available");
+    // legacy_fee call.
     asserter.push_success(&alloy_primitives::U128::from(7_000_000_000u128));
 
     let estimator = EvmFeeEstimator::new(provider, true);
