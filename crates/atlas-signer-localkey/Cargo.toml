@@ -19,6 +19,6 @@ tempfile.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-rand  = "0.8"
+rand  = "0.9"
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
