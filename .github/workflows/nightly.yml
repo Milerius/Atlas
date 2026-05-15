@@ -54,7 +54,7 @@ jobs:
       # Cache the Kani toolchain (~/.kani) and the kani-verifier binary
       # (~/.cargo/bin/cargo-kani). First run installs cold (~3 min); cached
       # runs skip straight to the proofs.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: kani-cache
         with:
           path: |
