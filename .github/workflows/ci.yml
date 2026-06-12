@@ -121,7 +121,7 @@ jobs:
       # BDD harness isn't meaningful — the value is in scenarios passing.
       - name: Line coverage (codecov)
         run: cargo +nightly llvm-cov --workspace --all-features --ignore-filename-regex 'atlas-scenarios' --codecov --output-path codecov.json
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: codecov.json
           fail_ci_if_error: false
